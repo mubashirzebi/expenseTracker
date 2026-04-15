@@ -8,6 +8,13 @@
       "when": 1776189185332,
       "tag": "0000_outstanding_whistler",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "6",
+      "when": 1776243239549,
+      "tag": "0001_perfect_the_fallen",
+      "breakpoints": true
     }
   ]
 }

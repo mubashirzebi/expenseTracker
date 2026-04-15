@@ -1,20 +1,21 @@
 import { Ionicons } from '@expo/vector-icons';
+import DateTimePicker from '@react-native-community/datetimepicker';
 import { useState } from 'react';
 import { Alert, KeyboardAvoidingView, Modal, Platform, Pressable, ScrollView, Text, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useGlobalState } from '../context/GlobalState';
 
 export default function HistoryScreen() {
-  const { 
-    historyData, 
-    setHistoryData, 
-    dailyCats, 
-    monthlyCats, 
-    updateTransaction, 
-    deleteTransaction 
+  const {
+    historyData,
+    setHistoryData,
+    dailyCats,
+    monthlyCats,
+    updateTransaction,
+    deleteTransaction
   } = useGlobalState();
 
-  const [activeRange, setActiveRange] = useState('This Week');
+  const [activeRange, setActiveRange] = useState('All Time');
   const [activeCategory, setActiveCategory] = useState('All');
   const [activeType, setActiveType] = useState('Both');
   const [searchQuery, setSearchQuery] = useState('');
@@ -24,8 +25,11 @@ export default function HistoryScreen() {
   const [showCategoryDropdown, setShowCategoryDropdown] = useState(false);
   const [showRangeDropdown, setShowRangeDropdown] = useState(false);
 
-  const ranges = ['This Week', 'This Month', 'Last 6 Months', 'Last 1 Year', 'Custom Range...'];
-  
+  const ranges = ['All Time', 'This Week', 'This Month', 'Last 6 Months', 'Last 1 Year', 'Custom Range...'];
+  const [customStartDate, setCustomStartDate] = useState<Date | null>(null);
+  const [customEndDate, setCustomEndDate] = useState<Date | null>(null);
+  const [showPicker, setShowPicker] = useState<'start' | 'end' | null>(null);
+
   // Combine all active categories from both tabs
   const allCats = [
     ...new Set([
@@ -33,7 +37,7 @@ export default function HistoryScreen() {
       ...monthlyCats.filter(c => !c.isArchived).map(c => c.name)
     ])
   ].sort();
-  
+
   const categories = ['All', ...allCats];
   const types = ['Both', 'Income', 'Expense'];
 
@@ -63,7 +67,7 @@ export default function HistoryScreen() {
       newData[editModal.groupIdx] = targetGroup;
 
       setHistoryData(newData);
-      
+
       // Update Database
       updateTransaction(targetEntry.id, { amount: cleanVal });
     }
@@ -77,14 +81,55 @@ export default function HistoryScreen() {
       "Are you sure you want to permanently remove this entry?",
       [
         { text: "Cancel", style: "cancel" },
-        { 
-          text: "Delete", 
-          style: "destructive", 
-          onPress: () => deleteTransaction(id) 
+        {
+          text: "Delete",
+          style: "destructive",
+          onPress: () => deleteTransaction(id)
         }
       ]
     );
   };
+
+  const getRangeDates = () => {
+    const end = new Date();
+    const start = new Date();
+
+    if (activeRange === 'All Time') {
+      start.setFullYear(2000);
+    } else if (activeRange === 'This Week') {
+      const day = start.getDay();
+      const diff = start.getDate() - day + (day === 0 ? -6 : 1);
+      start.setDate(diff);
+      start.setHours(0, 0, 0, 0);
+    } else if (activeRange === 'This Month') {
+      start.setDate(1);
+      start.setHours(0, 0, 0, 0);
+    } else if (activeRange === 'Last 6 Months') {
+      start.setMonth(start.getMonth() - 6);
+    } else if (activeRange === 'Last 1 Year') {
+      start.setFullYear(start.getFullYear() - 1);
+    } else if (activeRange === 'Custom Range...' && customStartDate && customEndDate) {
+      return { start: customStartDate, end: customEndDate };
+    } else {
+      // Fallback to a very old date if no filter
+      start.setFullYear(2000);
+    }
+
+    // Set end date to end of day to include all transactions for today
+    end.setHours(23, 59, 59, 999);
+
+    return { start, end };
+  };
+
+  const { start: rangeStart, end: rangeEnd } = getRangeDates();
+
+  const isWithinRange = (date: any) => {
+    const d = date instanceof Date ? date : new Date(date);
+    // Compare full timestamps to include time-based filtering
+    return d >= rangeStart && d <= rangeEnd;
+  };
+
+  const parseAmount = (str: string) => Number(str.replace(/[^0-9.]/g, '')) || 0;
 
   // Dynamic Analysis Math based on current state (mock logic)
   let visibleTotal = 0;
@@ -92,16 +137,17 @@ export default function HistoryScreen() {
     group.entries.forEach(entry => {
       if (activeCategory !== 'All' && entry.category !== activeCategory) return;
       if (activeType !== 'Both' && entry.type.toLowerCase() !== activeType.toLowerCase()) return;
-      
+      if (!isWithinRange(entry.createdAt)) return;
+
       const query = searchQuery.trim().toLowerCase();
-      const matchesSearch = !query || 
-        entry.category.toLowerCase().includes(query) || 
+      const matchesSearch = !query ||
+        entry.category.toLowerCase().includes(query) ||
         (entry.note && entry.note.toLowerCase().includes(query)) ||
         entry.amount.toLowerCase().includes(query);
-        
+
       if (!matchesSearch) return;
 
-      const val = Number(entry.amount.replace(/[^0-9.]/g, ''));
+      const val = parseAmount(entry.amount);
       if (entry.type === 'expense') visibleTotal -= val;
       else visibleTotal += val;
     });
@@ -113,16 +159,38 @@ export default function HistoryScreen() {
     return (Date.now() - d.getTime()) > 14 * 24 * 60 * 60 * 1000;
   };
 
+  // Format date for display
+  const formatDate = (date: any) => {
+    const d = date instanceof Date ? date : new Date(date);
+    return d.toLocaleDateString([], { day: 'numeric', month: 'short' });
+  };
+
+  const onChangeDate = (event: any, selectedDate?: Date) => {
+    if (event.type === 'dismissed') {
+      setShowPicker(null);
+      return;
+    }
+
+    if (showPicker === 'start' && selectedDate) {
+      setCustomStartDate(selectedDate);
+      setShowPicker('end'); // Immediately show end picker
+    } else if (showPicker === 'end' && selectedDate) {
+      setCustomEndDate(selectedDate);
+      setShowPicker(null);
+      setActiveRange('Custom Range...');
+    }
+  };
+
   return (
     <SafeAreaView className="flex-1 bg-bgLight">
       {/* Header and Search */}
       <View className="px-4 pt-4 pb-3 bg-white shadow-sm border-b border-slate-100 z-10">
-        <Text className="text-textMain text-2xl font-extrabold mb-4 px-1">Analytics & History</Text>
+        <Text className="text-textMain text-2xl font-extrabold mb-4 px-1">Transaction History</Text>
 
         <View className="flex-row items-center bg-slate-100 px-4 py-3 rounded-full mb-4">
           <Ionicons name="search" size={20} color="#94a3b8" />
           <TextInput
-            placeholder="Search notes, amounts, or tags..."
+            placeholder="Search notes, categories, or amounts..."
             className="flex-1 ml-2 font-medium text-textMain"
             placeholderTextColor="#94a3b8"
             value={searchQuery}
@@ -131,14 +199,18 @@ export default function HistoryScreen() {
         </View>
 
         {/* Dynamic Filters */}
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} className="flex-row mb-1 pt-1 pb-2">
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} className="flex-row mb-1 pt-1 pb-2" contentContainerStyle={{ paddingRight: 20 }}>
           {/* Date Range Picker Trigger */}
           <Pressable
             onPress={() => setShowRangeDropdown(true)}
             className="flex-row items-center bg-incomeLight px-4 py-2 rounded-full mr-2 border border-incomeLight"
           >
             <Ionicons name="calendar" size={16} color="#059669" />
-            <Text className="text-primaryDark font-bold ml-2">{activeRange}</Text>
+            <Text className="text-primaryDark font-bold ml-2">
+              {activeRange === 'Custom Range...' && customStartDate
+                ? `${formatDate(customStartDate)} - ${customEndDate ? formatDate(customEndDate) : '...'}`
+                : activeRange}
+            </Text>
             <Ionicons name="chevron-down" size={14} color="#059669" className="ml-1" />
           </Pressable>
 
@@ -193,13 +265,14 @@ export default function HistoryScreen() {
                   {group.entries.map((entry, entryIndex) => {
                     if (activeCategory !== 'All' && entry.category !== activeCategory) return null;
                     if (activeType !== 'Both' && entry.type.toLowerCase() !== activeType.toLowerCase()) return null;
+                    if (!isWithinRange(entry.createdAt)) return null;
 
                     const query = searchQuery.trim().toLowerCase();
-                    const matchesSearch = !query || 
-                      entry.category.toLowerCase().includes(query) || 
+                    const matchesSearch = !query ||
+                      entry.category.toLowerCase().includes(query) ||
                       (entry.note && entry.note.toLowerCase().includes(query)) ||
                       entry.amount.toLowerCase().includes(query);
-                      
+
                     if (!matchesSearch) return null;
 
                     return (
@@ -207,8 +280,8 @@ export default function HistoryScreen() {
                         key={entry.id}
                         onPress={() => {
                           if (isLocked(entry.createdAt)) {
-                             Alert.alert("Locked Record", "This transaction is from more than 14 days ago and cannot be modified.");
-                             return;
+                            Alert.alert("Locked Record", "This transaction is from more than 14 days ago and cannot be modified.");
+                            return;
                           }
                           const numStr = entry.amount.replace(/[^0-9.]/g, '');
                           setTempValue(numStr);
@@ -238,6 +311,9 @@ export default function HistoryScreen() {
                             {entry.note ? (
                               <Text className="text-textMuted text-xs font-medium">{entry.note}</Text>
                             ) : null}
+                            <Text className="text-textMuted text-xs font-medium mt-1">
+                              {entry.period} • {formatDate(entry.createdAt)}
+                            </Text>
                           </View>
                         </View>
 
@@ -246,12 +322,12 @@ export default function HistoryScreen() {
                             {entry.amount}
                           </Text>
                           {!isLocked(entry.createdAt) && (
-                            <Pressable 
-                              hitSlop={10} 
+                            <Pressable
+                              hitSlop={10}
                               onPress={() => handleDelete(entry.id)}
                               className="p-1"
                             >
-                               <Ionicons name="trash-outline" size={18} color="#ef4444" />
+                              <Ionicons name="trash-outline" size={18} color="#ef4444" />
                             </Pressable>
                           )}
                         </View>
@@ -275,7 +351,15 @@ export default function HistoryScreen() {
             {ranges.map(r => (
               <Pressable
                 key={r}
-                onPress={() => { setActiveRange(r); setShowRangeDropdown(false); }}
+                onPress={() => {
+                  if (r === 'Custom Range...') {
+                    setShowRangeDropdown(false);
+                    setShowPicker('start');
+                  } else {
+                    setActiveRange(r);
+                    setShowRangeDropdown(false);
+                  }
+                }}
                 className="py-4 px-4 rounded-xl mb-1"
                 style={activeRange === r ? { backgroundColor: '#d1fae5' } : {}}
               >
@@ -285,6 +369,27 @@ export default function HistoryScreen() {
           </View>
         </Pressable>
       </Modal>
+
+      {/* --- DATE PICKERS --- */}
+      {showPicker === 'start' && (
+        <DateTimePicker
+          value={customStartDate || new Date()}
+          mode="date"
+          display="default"
+          onChange={onChangeDate}
+          maximumDate={new Date()}
+        />
+      )}
+      {showPicker === 'end' && (
+        <DateTimePicker
+          value={customEndDate || new Date()}
+          mode="date"
+          display="default"
+          onChange={onChangeDate}
+          minimumDate={customStartDate || undefined}
+          maximumDate={new Date()}
+        />
+      )}
 
       {/* Type Selection Modal */}
       <Modal visible={showTypeDropdown} transparent animationType="fade">

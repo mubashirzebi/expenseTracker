@@ -1,17 +1,48 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useRef, useState } from 'react';
-import { ActivityIndicator, KeyboardAvoidingView, Modal, Pressable, ScrollView, Text, TextInput, View } from 'react-native';
+import { ActivityIndicator, Alert, KeyboardAvoidingView, Modal, Pressable, ScrollView, Text, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useGlobalState } from '../context/GlobalState';
 
 export default function MonthlyScreen() {
   const [currentMonthIndex, setCurrentMonthIndex] = useState(0);
-  const currentTitle = currentMonthIndex === 0 ? 'April 2026' : 'March 2026';
+
+  const targetDate = new Date();
+  targetDate.setMonth(targetDate.getMonth() + currentMonthIndex);
+  const currentTitle = targetDate.toLocaleDateString('en-GB', { month: 'long', year: 'numeric' });
+
   const amountRef = useRef<TextInput>(null);
 
-  const { monthlyCats, dailyIncome, monthlyIncome, dailyExpense, monthlyExpense, addTransaction } = useGlobalState();
-  const totalCombinedIncome = dailyIncome + monthlyIncome;
-  const netSavings = totalCombinedIncome - dailyExpense - monthlyExpense;
+  const { monthlyCats, addTransaction, historyData } = useGlobalState();
+
+  const flatEntries = historyData.reduce((acc, g) => acc.concat(g.entries || []), [] as any[]);
+
+  const monthEntries = flatEntries.filter(e => {
+    const d = new Date(e.createdAt);
+    return d.getMonth() === targetDate.getMonth() && d.getFullYear() === targetDate.getFullYear();
+  });
+
+  const parseAmount = (str: string) => Number(str.replace(/[^0-9.]/g, '')) || 0;
+
+  const monthDailyIncome = monthEntries
+    .filter(e => e.period === 'daily' && e.type === 'income')
+    .reduce((acc, e) => acc + parseAmount(e.amount), 0);
+
+  const monthDailyExpense = monthEntries
+    .filter(e => e.period === 'daily' && e.type === 'expense')
+    .reduce((acc, e) => acc + parseAmount(e.amount), 0);
+
+  const monthMonthlyIncome = monthEntries
+    .filter(e => e.period === 'monthly' && e.type === 'income')
+    .reduce((acc, e) => acc + parseAmount(e.amount), 0);
+
+  const monthMonthlyExpense = monthEntries
+    .filter(e => e.period === 'monthly' && e.type === 'expense')
+    .reduce((acc, e) => acc + parseAmount(e.amount), 0);
+
+  const totalCombinedIncome = monthDailyIncome + monthMonthlyIncome;
+  const totalExpenses = monthDailyExpense + monthMonthlyExpense;
+  const netSavings = totalCombinedIncome - totalExpenses;
 
   // Form States (Analogous to Daily Tab)
   const [type, setType] = useState('expense');
@@ -31,29 +62,35 @@ export default function MonthlyScreen() {
   const handleSaveMonthly = () => {
     if (!amount) return;
 
-    setIsSaving(true);
+    const saveEntry = async () => {
+      try {
+        const parsedAmount = Number(amount.replace(/[^0-9.]/g, ''));
 
-    setTimeout(() => {
-      setIsSaving(false);
-      const parsedAmount = Number(amount.replace(/[^0-9.]/g, ''));
+        await addTransaction({
+          id: Math.random().toString(),
+          category: category,
+          amount: `${isExp ? '-' : '+'}₹${parsedAmount.toLocaleString()}`,
+          note: note || '',
+          type: type,
+          period: 'monthly',
+          createdAt: new Date()
+        }, parsedAmount);
 
-      // Push seamlessly into global ledger
-      addTransaction({
-        id: Math.random().toString(),
-        category: category,
-        amount: `${isExp ? '-' : '+'}₹${parsedAmount.toLocaleString()}`,
-        note: note || '',
-        type: type,
-        period: 'monthly'
-      }, parsedAmount);
-
-      setShowSuccess(true);
-      setTimeout(() => {
-        setShowSuccess(false);
+        setIsSaving(false);
+        setShowSuccess(true);
         setAmount('');
         setNote('');
-      }, 1500);
-    }, 400);
+
+        setTimeout(() => {
+          setShowSuccess(false);
+        }, 1500);
+      } catch (e) {
+        setIsSaving(false);
+        Alert.alert("Error", "Could not save entry.");
+      }
+    };
+
+    saveEntry();
   };
 
   return (
@@ -86,21 +123,36 @@ export default function MonthlyScreen() {
             <Text className="text-textMuted font-bold text-xs uppercase mb-4 text-center tracking-wider">Statement Summary</Text>
 
             <View className="flex-row justify-between mb-3">
-              <Text className="text-textMuted font-medium">Total Income</Text>
-              <Text className="text-primary font-bold">₹{totalCombinedIncome.toLocaleString(undefined, { minimumFractionDigits: 2 })}</Text>
+              <Text className="text-textMuted font-medium">Daily Income</Text>
+              <Text className="text-primary font-bold">+₹{monthDailyIncome.toLocaleString(undefined, { minimumFractionDigits: 2 })}</Text>
             </View>
 
             <View className="flex-row justify-between mb-3">
-              <Text className="text-textMuted font-medium">Daily Expenses (Calculated)</Text>
-              <Text className="text-danger font-bold">-₹{dailyExpense.toLocaleString(undefined, { minimumFractionDigits: 2 })}</Text>
+              <Text className="text-textMuted font-medium">Monthly Income</Text>
+              <Text className="text-primary font-bold">+₹{monthMonthlyIncome.toLocaleString(undefined, { minimumFractionDigits: 2 })}</Text>
+            </View>
+
+            <View className="flex-row justify-between mb-3">
+              <Text className="text-textMuted font-medium">Daily Expenses</Text>
+              <Text className="text-danger font-bold">-₹{monthDailyExpense.toLocaleString(undefined, { minimumFractionDigits: 2 })}</Text>
             </View>
 
             <View className="flex-row justify-between mb-4 border-b border-slate-100 pb-4">
-              <Text className="text-textMuted font-medium">Monthly Bills</Text>
-              <Text className="text-danger font-bold">-₹{monthlyExpense.toLocaleString(undefined, { minimumFractionDigits: 2 })}</Text>
+              <Text className="text-textMuted font-medium">Monthly Expenses</Text>
+              <Text className="text-danger font-bold">-₹{monthMonthlyExpense.toLocaleString(undefined, { minimumFractionDigits: 2 })}</Text>
             </View>
 
-            <View className="flex-row justify-between items-center">
+            <View className="flex-row justify-between mb-3 pt-3 border-t border-slate-200">
+              <Text className="text-textMain font-bold">Total Income</Text>
+              <Text className="text-primary font-bold">+₹{totalCombinedIncome.toLocaleString(undefined, { minimumFractionDigits: 2 })}</Text>
+            </View>
+
+            <View className="flex-row justify-between mb-4">
+              <Text className="text-textMain font-bold">Total Expenses</Text>
+              <Text className="text-danger font-bold">-₹{totalExpenses.toLocaleString(undefined, { minimumFractionDigits: 2 })}</Text>
+            </View>
+
+            <View className="flex-row justify-between items-center pt-3 border-t border-slate-200">
               <Text className="text-textMain font-extrabold text-lg">Net Savings</Text>
               <Text className={`font-extrabold text-xl ${netSavings >= 0 ? 'text-primary' : 'text-danger'}`}>
                 {netSavings >= 0 ? '+' : '-'}₹{Math.abs(netSavings).toLocaleString(undefined, { minimumFractionDigits: 2 })}
@@ -108,7 +160,7 @@ export default function MonthlyScreen() {
             </View>
           </View>
 
-          {/* ----- QUICK ENTRY BOTTOM ----- */}
+          {/* ----- LOG MONTHLY ITEM SECTION ----- */}
           <Text className="text-textMain text-xl font-extrabold mb-5 px-1">Log Monthly Item</Text>
 
           {/* Toggle Type */}
@@ -131,7 +183,7 @@ export default function MonthlyScreen() {
 
           {/* Amount input block */}
           <View className="mb-10 w-full">
-            <Pressable 
+            <Pressable
               onPress={() => amountRef.current?.focus()}
               className="bg-white border border-slate-100 shadow-sm rounded-3xl w-full py-8 items-center justify-center active:bg-slate-50 transition-colors"
             >

@@ -1,12 +1,11 @@
-import React, { createContext, useContext, useEffect, useState } from 'react';
-import { View } from 'react-native';
-import { db } from '../../db/client';
-import * as schema from '../../db/schema';
-import { eq, desc, and } from 'drizzle-orm';
+import { and, desc, eq } from 'drizzle-orm';
+import * as DocumentPicker from 'expo-document-picker';
 import * as FileSystem from 'expo-file-system/legacy';
 import * as Sharing from 'expo-sharing';
-import * as DocumentPicker from 'expo-document-picker';
-import { Alert } from 'react-native';
+import React, { createContext, useContext, useEffect, useState } from 'react';
+import { Alert, View } from 'react-native';
+import { db } from '../../db/client';
+import * as schema from '../../db/schema';
 
 export type Entry = {
   id: string;
@@ -47,6 +46,10 @@ type GlobalStateContextType = {
   setMonthlyCats: React.Dispatch<React.SetStateAction<Category[]>>;
   cutoffTime: string;
   setCutoffTime: React.Dispatch<React.SetStateAction<string>>;
+  autoBackupTime: string;
+  setAutoBackupTime: React.Dispatch<React.SetStateAction<string>>;
+  autoBackupEnabled: boolean;
+  setAutoBackupEnabled: React.Dispatch<React.SetStateAction<boolean>>;
   getBusinessDateString: (overrideDate?: Date, overrideCutoff?: string) => string;
   updateTransaction: (id: string, updates: { amount?: number; category?: string; note?: string }) => Promise<void>;
   deleteTransaction: (id: string) => Promise<void>;
@@ -62,13 +65,62 @@ export function GlobalProvider({ children }: { children: React.ReactNode }) {
   const [openingAmount, setOpeningAmountState] = useState<number | null>(null);
   const [closingBalance, setClosingBalanceState] = useState<number | null>(null);
   const [historyData, setHistoryData] = useState<HistoryGroup[]>([]);
-  
+
   const [dailyCats, setDailyCatsState] = useState<Category[]>([]);
   const [monthlyCats, setMonthlyCatsState] = useState<Category[]>([]);
   const [cutoffTime, setCutoffTimeState] = useState('03:00 AM');
+  const [autoBackupTime, setAutoBackupTimeState] = useState('09:00 PM');
+  const [autoBackupEnabled, setAutoBackupEnabledState] = useState(false);
 
   // Hardcoded for now until Auth is implemented
   const DEFAULT_USER = 'user_123';
+
+  // Auto Backup Timer
+  useEffect(() => {
+    if (!autoBackupEnabled) return;
+
+    const checkAndRunBackup = () => {
+      const now = new Date();
+      const [hours, minutes] = parseTime(autoBackupTime);
+
+      const backupTime = new Date();
+      backupTime.setHours(hours, minutes, 0, 0);
+
+      // If backup time has passed today, schedule for tomorrow
+      if (now > backupTime) {
+        backupTime.setDate(backupTime.getDate() + 1);
+      }
+
+      const timeUntilBackup = backupTime.getTime() - now.getTime();
+
+      const timerId = setTimeout(() => {
+        exportDatabase(true); // true = auto backup
+        checkAndRunBackup(); // Schedule next backup
+      }, timeUntilBackup);
+
+      return timerId;
+    };
+
+    const timerId = checkAndRunBackup();
+
+    return () => {
+      if (timerId) clearTimeout(timerId);
+    };
+  }, [autoBackupEnabled, autoBackupTime]);
+
+  const parseTime = (timeStr: string): [number, number] => {
+    const match = timeStr.match(/(\d+):(\d+)\s*(AM|PM)?/i);
+    if (!match) return [21, 0]; // Default to 9:00 PM
+
+    let hours = parseInt(match[1], 10);
+    const minutes = parseInt(match[2], 10);
+    const modifier = match[3]?.toUpperCase();
+
+    if (modifier === 'PM' && hours < 12) hours += 12;
+    if (modifier === 'AM' && hours === 12) hours = 0;
+
+    return [hours, minutes];
+  };
 
   useEffect(() => {
     loadInitialData();
@@ -80,7 +132,7 @@ export function GlobalProvider({ children }: { children: React.ReactNode }) {
       const user = await db.query.users.findFirst({
         where: eq(schema.users.id, DEFAULT_USER)
       });
-      
+
       if (!user) {
         await db.insert(schema.users).values({
           id: DEFAULT_USER,
@@ -94,11 +146,19 @@ export function GlobalProvider({ children }: { children: React.ReactNode }) {
         setCutoffTimeState(user.cutoffTime);
       }
 
+      if (user && user.autoBackupTime) {
+        setAutoBackupTimeState(user.autoBackupTime);
+      }
+
+      if (user && user.autoBackupEnabled !== undefined && user.autoBackupEnabled !== null) {
+        setAutoBackupEnabledState(user.autoBackupEnabled);
+      }
+
       // 1. Load Categories
       const allCats = await db.query.categories.findMany({
         where: eq(schema.categories.userId, DEFAULT_USER)
       });
-      
+
       if (allCats.length === 0) {
         // Seed default categories if first run
         const defaults = [
@@ -148,9 +208,9 @@ export function GlobalProvider({ children }: { children: React.ReactNode }) {
         // Correctly calculate the Business Date label for the record
         const bDateForRecord = getBusinessDateString(t.createdAt);
         const groupLabel = `Business Date: ${bDateForRecord}`;
-        
+
         const existing = groups.find(g => g.date === groupLabel);
-        
+
         const entry: Entry = {
           id: t.id,
           category: t.categoryId || 'Other',
@@ -179,7 +239,7 @@ export function GlobalProvider({ children }: { children: React.ReactNode }) {
   const getBusinessDateString = (overrideDate?: Date, overrideCutoff?: string) => {
     const activeCutoff = overrideCutoff || cutoffTime;
     const targetDate = overrideDate || new Date();
-    
+
     // Robust parsing for "03:00 AM", "3:00AM", "15:00", etc.
     const timeMatch = activeCutoff.match(/(\d+):(\d+)\s*(AM|PM)?/i);
     let hours = 3;
@@ -197,12 +257,12 @@ export function GlobalProvider({ children }: { children: React.ReactNode }) {
     if (targetDate.getHours() < hours || (targetDate.getHours() === hours && targetDate.getMinutes() < minutes)) {
       businessDate.setDate(targetDate.getDate() - 1);
     }
-    
+
     return businessDate.toLocaleDateString('en-GB', { day: '2-digit', month: 'short' });
   };
 
   const parseAmount = (str: string) => Number(str.replace(/[^0-9.]/g, '')) || 0;
-  
+
   // High-performance dashboard calculations
   const todayLabel = `Business Date: ${getBusinessDateString()}`;
   const todayGroup = historyData.find(g => g.date === todayLabel);
@@ -218,12 +278,26 @@ export function GlobalProvider({ children }: { children: React.ReactNode }) {
 
   const flatEntries = historyData.reduce((acc, g) => acc.concat(g.entries || []), [] as Entry[]);
 
+  const now = new Date();
+  const currentMonth = now.getMonth();
+  const currentYear = now.getFullYear();
+
   const monthlyIncome = flatEntries
-    .filter(e => e.period === 'monthly' && e.type === 'income')
+    .filter(e => {
+      const d = new Date(e.createdAt);
+      const isThisMonth = d.getMonth() === currentMonth && d.getFullYear() === currentYear;
+      // Include all monthly items + daily items from the current month
+      return (e.period === 'monthly' || (e.period === 'daily' && isThisMonth)) && e.type === 'income';
+    })
     .reduce((acc, e) => acc + parseAmount(e.amount), 0);
 
   const monthlyExpense = flatEntries
-    .filter(e => e.period === 'monthly' && e.type === 'expense')
+    .filter(e => {
+      const d = new Date(e.createdAt);
+      const isThisMonth = d.getMonth() === currentMonth && d.getFullYear() === currentYear;
+      // Include all monthly items + daily items from the current month
+      return (e.period === 'monthly' || (e.period === 'daily' && isThisMonth)) && e.type === 'expense';
+    })
     .reduce((acc, e) => acc + parseAmount(e.amount), 0);
 
   const setOpeningAmount = async (val: number | null) => {
@@ -265,15 +339,26 @@ export function GlobalProvider({ children }: { children: React.ReactNode }) {
   };
 
   const persistCategory = async (name: string, tabContext: 'Daily' | 'Monthly') => {
+    const trimmed = name.trim();
+    if (!trimmed) return;
+
+    // Duplicate check
+    const existing = tabContext === 'Daily' ? dailyCats : monthlyCats;
+    if (existing.find(c => c.name.toLowerCase() === trimmed.toLowerCase())) {
+      Alert.alert("Already Exists", `A ${tabContext} category named "${trimmed}" already exists.`);
+      return;
+    }
+
     const id = Date.now().toString();
     await db.insert(schema.categories).values({
       id,
       userId: DEFAULT_USER,
-      name,
+      name: trimmed,
       tabContext,
-      isArchived: false
+      isArchived: false,
     });
-    const newCat = { id, name, isArchived: false };
+
+    const newCat = { id, name: trimmed, isArchived: false };
     if (tabContext === 'Daily') setDailyCatsState([...dailyCats, newCat]);
     else setMonthlyCatsState([...monthlyCats, newCat]);
   };
@@ -284,37 +369,68 @@ export function GlobalProvider({ children }: { children: React.ReactNode }) {
     else setMonthlyCatsState(prev => prev.filter(c => c.id !== id));
   };
 
-  const setCutoffTime = async (t: string) => {
-    setCutoffTimeState(t);
-    await db.update(schema.users)
-      .set({ cutoffTime: t })
-      .where(eq(schema.users.id, DEFAULT_USER));
+  const setCutoffTime: React.Dispatch<React.SetStateAction<string>> = (action) => {
+    const newValue = typeof action === 'function' ? action(cutoffTime) : action;
+    setCutoffTimeState(newValue);
+
+    // Fire and forget the DB update
+    db.update(schema.users)
+      .set({ cutoffTime: newValue })
+      .where(eq(schema.users.id, DEFAULT_USER))
+      .catch(e => console.error("Failed to update cutoff time", e));
+  };
+
+  const setAutoBackupTime: React.Dispatch<React.SetStateAction<string>> = (action) => {
+    const newValue = typeof action === 'function' ? action(autoBackupTime) : action;
+    setAutoBackupTimeState(newValue);
+
+    // Fire and forget the DB update
+    db.update(schema.users)
+      .set({ autoBackupTime: newValue })
+      .where(eq(schema.users.id, DEFAULT_USER))
+      .catch(e => console.error("Failed to update auto backup time", e));
+  };
+
+  const setAutoBackupEnabled: React.Dispatch<React.SetStateAction<boolean>> = (action) => {
+    const newValue = typeof action === 'function' ? action(autoBackupEnabled) : action;
+    setAutoBackupEnabledState(newValue);
+
+    // Fire and forget the DB update
+    db.update(schema.users)
+      .set({ autoBackupEnabled: newValue })
+      .where(eq(schema.users.id, DEFAULT_USER))
+      .catch(e => console.error("Failed to update auto backup enabled", e));
   };
 
   const addTransaction = async (entry: Entry, rawAmount: number) => {
     try {
+      // Use the entry's createdAt or current time
+      const entryCreatedAt = entry.createdAt || new Date();
+
       // 1. Instant State Update (Optimistic UI)
-      const bDate = getBusinessDateString();
+      const bDate = getBusinessDateString(entryCreatedAt);
+      const groupLabel = `Business Date: ${bDate}`;
+
       setHistoryData(prev => {
-        const existingGroupIdx = prev.findIndex(g => g.date.includes(bDate));
-        
+        const existingGroupIdx = prev.findIndex(g => g.date === groupLabel);
+
         if (existingGroupIdx === -1) {
-          return [{ date: `Business Date: ${bDate}`, entries: [entry] }, ...prev];
+          return [{ date: groupLabel, entries: [entry] }, ...prev];
         }
-        
+
         const newData = [...prev];
         const targetGroup = { ...newData[existingGroupIdx] };
-        
+
         // If it's an upsert (e.g. Total Sale), replace the old entry in state
         const existingEntryIdx = targetGroup.entries.findIndex(e => e.id === entry.id);
         if (existingEntryIdx !== -1) {
           const newEntries = [...targetGroup.entries];
-          newEntries[existingEntryIdx] = { ...entry, createdAt: new Date() };
+          newEntries[existingEntryIdx] = { ...entry, createdAt: entryCreatedAt };
           targetGroup.entries = newEntries;
         } else {
-          targetGroup.entries = [{ ...entry, createdAt: new Date() }, ...targetGroup.entries];
+          targetGroup.entries = [{ ...entry, createdAt: entryCreatedAt }, ...targetGroup.entries];
         }
-        
+
         newData[existingGroupIdx] = targetGroup;
         return newData;
       });
@@ -328,7 +444,7 @@ export function GlobalProvider({ children }: { children: React.ReactNode }) {
         transactionType: entry.type,
         trackingPeriod: entry.period,
         note: entry.note,
-        createdAt: new Date()
+        createdAt: entryCreatedAt
       }).onConflictDoUpdate({
         target: schema.transactions.id,
         set: {
@@ -365,7 +481,7 @@ export function GlobalProvider({ children }: { children: React.ReactNode }) {
         entries: group.entries.map(e => e.id === id ? {
           ...e,
           category: updates.category || e.category,
-          amount: updates.amount !== undefined 
+          amount: updates.amount !== undefined
             ? `${e.type === 'expense' ? '-' : '+'}₹${updates.amount.toLocaleString()}`
             : e.amount,
           note: updates.note !== undefined ? updates.note : e.note
@@ -401,28 +517,37 @@ export function GlobalProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
-  const exportDatabase = async () => {
+  const exportDatabase = async (isAutoBackup: boolean = false) => {
     try {
       const dbPath = FileSystem.documentDirectory + 'SQLite/expense_tracker.db';
       const fileInfo = await FileSystem.getInfoAsync(dbPath);
 
       if (!fileInfo.exists) {
-        Alert.alert("Error", "Database file not found. Make sure you have added some records first.");
+        if (!isAutoBackup) {
+          Alert.alert("Error", "Database file not found. Make sure you have added some records first.");
+        }
         return;
       }
 
       // Ensure cache directory exists
       if (FileSystem.cacheDirectory) {
-        await FileSystem.makeDirectoryAsync(FileSystem.cacheDirectory, { intermediates: true }).catch(() => {});
+        await FileSystem.makeDirectoryAsync(FileSystem.cacheDirectory, { intermediates: true }).catch(() => { });
       }
 
-      const backupFileName = `ExpenseTracker_Backup_${new Date().toISOString().split('T')[0]}.db`;
+      const backupFileName = isAutoBackup
+        ? 'ExpenseTracker_AutoBackup.db'
+        : `ExpenseTracker_Backup_${new Date().toISOString().split('T')[0]}.db`;
       const backupPath = (FileSystem.cacheDirectory || FileSystem.documentDirectory) + backupFileName;
-      
+
       await FileSystem.copyAsync({
         from: dbPath,
         to: backupPath
       });
+
+      if (isAutoBackup) {
+        console.log('Auto backup completed at:', new Date().toISOString());
+        return;
+      }
 
       const isAvailable = await Sharing.isAvailableAsync();
       if (isAvailable) {
@@ -436,7 +561,9 @@ export function GlobalProvider({ children }: { children: React.ReactNode }) {
       }
     } catch (e: any) {
       console.error("Export failed:", e);
-      Alert.alert("Export Error", `Details: ${e.message || "Unknown error"}. Is the database busy?`);
+      if (!isAutoBackup) {
+        Alert.alert("Export Error", `Details: ${e.message || "Unknown error"}. Is the database busy?`);
+      }
     }
   };
 
@@ -493,6 +620,8 @@ export function GlobalProvider({ children }: { children: React.ReactNode }) {
       dailyCats, setDailyCats,
       monthlyCats, setMonthlyCats,
       cutoffTime, setCutoffTime,
+      autoBackupTime, setAutoBackupTime,
+      autoBackupEnabled, setAutoBackupEnabled,
       getBusinessDateString,
       updateTransaction, deleteTransaction,
       exportDatabase, importDatabase,

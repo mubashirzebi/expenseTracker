@@ -1,6 +1,6 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useRef, useState } from 'react';
-import { ActivityIndicator, Alert, KeyboardAvoidingView, Modal, Platform, Pressable, ScrollView, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, Alert, KeyboardAvoidingView, Modal, Pressable, ScrollView, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useGlobalState } from '../context/GlobalState';
 
@@ -25,40 +25,43 @@ export default function DailyScreen() {
 
     const parsedAmount = Number(amount.replace(/[^0-9.]/g, ''));
 
-    setIsSaving(true);
+    const saveEntry = async () => {
+      try {
+        await addTransaction({
+          id: Math.random().toString(),
+          category: category,
+          amount: `${isExp ? '-' : '+'}₹${parsedAmount.toLocaleString()}`,
+          note: note || '',
+          type: type,
+          period: 'daily',
+          createdAt: new Date()
+        }, parsedAmount);
 
-    // Mock network delay / save effect
-    setTimeout(() => {
-      setIsSaving(false);
-      setShowSuccess(true);
-
-      // Push into global state layer directly
-      addTransaction({
-        id: Math.random().toString(),
-        category: category,
-        amount: `${isExp ? '-' : '+'}₹${parsedAmount.toLocaleString()}`,
-        note: note || '',
-        type: type,
-        period: 'daily'
-      }, parsedAmount);
-
-      // Auto-hide success modal and clear form
-      setTimeout(() => {
-        setShowSuccess(false);
+        setIsSaving(false);
+        setShowSuccess(true);
         setAmount('');
         setNote('');
-      }, 1500);
-    }, 400);
+
+        setTimeout(() => {
+          setShowSuccess(false);
+        }, 1500);
+      } catch (e) {
+        setIsSaving(false);
+        Alert.alert("Error", "Could not save entry.");
+      }
+    };
+
+    saveEntry();
   };
 
   return (
     <SafeAreaView className="flex-1 bg-bgLight">
-      <KeyboardAvoidingView 
+      <KeyboardAvoidingView
         behavior="padding"
         className="flex-1"
       >
-        <ScrollView 
-          className="flex-1 px-5 pt-6" 
+        <ScrollView
+          className="flex-1 px-5 pt-6"
           contentContainerStyle={{ paddingBottom: 20 }}
           showsVerticalScrollIndicator={false}
           keyboardShouldPersistTaps="handled"
@@ -68,14 +71,14 @@ export default function DailyScreen() {
 
           {/* Toggle Type */}
           <View className="flex-row bg-slate-200 rounded-xl p-1 mb-10">
-            <Pressable 
+            <Pressable
               onPress={() => { setType('expense'); setCategory('Food'); }}
               className="flex-1 py-3 rounded-lg items-center"
               style={isExp ? { backgroundColor: 'white', shadowColor: '#000', shadowOpacity: 0.05, shadowRadius: 2, shadowOffset: { width: 0, height: 1 }, elevation: 2 } : { backgroundColor: 'transparent' }}
             >
               <Text className="font-semibold" style={{ color: isExp ? '#ef4444' : '#64748b' }}>Expense</Text>
             </Pressable>
-            <TouchableOpacity 
+            <TouchableOpacity
               onPress={() => { setType('income'); setCategory('Other'); }}
               className="flex-1 py-3 rounded-lg items-center"
               style={!isExp ? { backgroundColor: 'white', shadowColor: '#000', shadowOpacity: 0.05, shadowRadius: 2, shadowOffset: { width: 0, height: 1 }, elevation: 2 } : { backgroundColor: 'transparent' }}
@@ -86,7 +89,7 @@ export default function DailyScreen() {
 
           {/* Amount input */}
           <View className="mb-10 w-full">
-            <Pressable 
+            <Pressable
               onPress={() => amountRef.current?.focus()}
               className="bg-white border border-slate-100 shadow-sm rounded-3xl w-full py-8 items-center justify-center active:bg-slate-50 transition-colors"
             >
@@ -116,7 +119,7 @@ export default function DailyScreen() {
               // Pre-calculate to avoid Nested Ternary compiler crashes in NativeWind
               const isActive = category === cat;
               return (
-                <Pressable 
+                <Pressable
                   key={cat}
                   onPress={() => setCategory(cat)}
                   className="px-4 py-3 rounded-full border-2"
@@ -145,7 +148,7 @@ export default function DailyScreen() {
 
         {/* Save Button */}
         <View className="px-5 pb-6 pt-2">
-          <Pressable 
+          <Pressable
             onPress={handleSaveEntry}
             disabled={isSaving}
             className="py-4 flex-row justify-center rounded-full shadow-lg items-center active:scale-95 transition-transform"

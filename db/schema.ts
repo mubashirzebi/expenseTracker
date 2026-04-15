@@ -1,4 +1,4 @@
-import { sqliteTable, text, integer, real, unique } from 'drizzle-orm/sqlite-core';
+import { integer, real, sqliteTable, text, unique } from 'drizzle-orm/sqlite-core';
 
 // --- USERS TABLE ---
 export const users = sqliteTable('users', {
@@ -8,6 +8,8 @@ export const users = sqliteTable('users', {
   passwordHash: text('password_hash').notNull(),
   businessName: text('business_name'),
   cutoffTime: text('cutoff_time').default('03:00 AM'),
+  autoBackupTime: text('auto_backup_time').default('09:00 PM'),
+  autoBackupEnabled: integer('auto_backup_enabled', { mode: 'boolean' }).default(false),
   createdAt: integer('created_at', { mode: 'timestamp' }).notNull(),
 });
 

@@ -17,7 +17,7 @@ export default function RootLayout() {
     if (error) {
       console.error('Migration error:', error);
       return (
-        <View style={{ flex: 1, justifyContent: 'center', items: 'center' }}>
+        <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
           <Text>Database Error: {error.message}</Text>
         </View>
       );
