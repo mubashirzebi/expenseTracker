@@ -252,11 +252,13 @@ export function GlobalProvider({ children }: { children: React.ReactNode }) {
         ]);
 
         if (manualInfo.exists || autoInfo.exists) {
-          const latestInfo = (manualInfo.exists && autoInfo.exists)
-            ? (manualInfo.modificationTime || 0) > (autoInfo.modificationTime || 0) ? manualInfo : autoInfo
-            : (manualInfo.exists ? manualInfo : autoInfo);
+          // Narrow types for safety
+          const mTime = (manualInfo.exists && manualInfo.modificationTime) ? manualInfo.modificationTime : 0;
+          const aTime = (autoInfo.exists && autoInfo.modificationTime) ? autoInfo.modificationTime : 0;
 
-          setDetectedBackupDate(latestInfo.modificationTime ? new Date(latestInfo.modificationTime * 1000) : new Date());
+          const latestTime = Math.max(mTime, aTime);
+          
+          setDetectedBackupDate(latestTime > 0 ? new Date(latestTime * 1000) : new Date());
           setShowWelcomeModal(true);
         }
       }
@@ -571,15 +573,11 @@ export function GlobalProvider({ children }: { children: React.ReactNode }) {
         await FileSystem.makeDirectoryAsync(FileSystem.cacheDirectory, { intermediates: true }).catch(() => { });
       }
 
-      const backupFileName = isAutoBackup
-        ? 'ExpenseTracker_AutoBackup.db'
-        : `ExpenseTracker_Backup_${new Date().toISOString().split('T')[0]}.db`;
-      
-      // Internal path for "Welcome Back" detection (persistent across cache clears)
-      const masterBackupPath = FileSystem.documentDirectory + 'ExpenseTracker_Backup.db';
+      // Internal path for \"Welcome Back\" detection (persistent across cache clears)
+      const masterBackupPath = FileSystem.documentDirectory + (isAutoBackup ? 'ExpenseTracker_AutoBackup.db' : 'ExpenseTracker_Backup.db');
       
       // External path for sharing/export
-      const sharePath = (FileSystem.cacheDirectory || FileSystem.documentDirectory) + backupFileName;
+      const sharePath = (FileSystem.cacheDirectory || FileSystem.documentDirectory) + (isAutoBackup ? 'ExpenseTracker_AutoBackup.db' : `ExpenseTracker_Backup_${new Date().toISOString().split('T')[0]}.db`);
 
       // Save to Master location for app-detection
       await FileSystem.copyAsync({ from: dbPath, to: masterBackupPath });

@@ -106,7 +106,7 @@ export default function HomeScreen() {
                         <Text className="text-primaryDark text-xs font-bold uppercase ml-1">Daily Income</Text>
                      </View>
                   </View>
-                  <Text className="text-primaryDark text-xl font-extrabold">₹{dailyIncome.toLocaleString()}</Text>
+                  <Text className="text-primaryDark text-xl font-extrabold">₹{(dailyIncome || 0).toLocaleString()}</Text>
                </View>
 
                <View className="flex-1 bg-dangerLight p-4 rounded-2xl border border-dangerLight">
@@ -116,7 +116,7 @@ export default function HomeScreen() {
                         <Text className="text-danger text-xs font-bold uppercase ml-1">Daily Expense</Text>
                      </View>
                   </View>
-                  <Text className="text-danger text-xl font-extrabold">₹{dailyExpense.toLocaleString()}</Text>
+                  <Text className="text-danger text-xl font-extrabold">₹{(dailyExpense || 0).toLocaleString()}</Text>
                </View>
             </View>
 
@@ -128,7 +128,7 @@ export default function HomeScreen() {
                         <Text className="text-textMuted text-xs font-bold uppercase ml-1">Month Income</Text>
                      </View>
                   </View>
-                  <Text className="text-textMain text-lg font-bold">₹{monthlyIncome.toLocaleString()}</Text>
+                  <Text className="text-textMain text-lg font-bold">₹{(monthlyIncome || 0).toLocaleString()}</Text>
                </View>
 
                <View className="flex-1 bg-white p-4 rounded-2xl shadow-sm border border-slate-100">
@@ -138,7 +138,7 @@ export default function HomeScreen() {
                         <Text className="text-textMuted text-xs font-bold uppercase ml-1">Month Expense</Text>
                      </View>
                   </View>
-                  <Text className="text-textMain text-lg font-bold">₹{monthlyExpense.toLocaleString()}</Text>
+                  <Text className="text-textMain text-lg font-bold">₹{(monthlyExpense || 0).toLocaleString()}</Text>
                </View>
             </View>
 
@@ -245,7 +245,7 @@ export default function HomeScreen() {
          <Modal visible={showOpeningModal} transparent animationType="slide">
             <KeyboardAvoidingView 
                className="flex-1" 
-               behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+               behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
                keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 20}
             >
                <View className="flex-1 justify-end" style={{ backgroundColor: 'rgba(15,23,42,0.4)' }}>
@@ -281,7 +281,7 @@ export default function HomeScreen() {
          <Modal visible={showClosingModal} transparent animationType="slide">
             <KeyboardAvoidingView 
                className="flex-1" 
-               behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+               behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
                keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 20}
             >
                <View className="flex-1 justify-end" style={{ backgroundColor: 'rgba(15,23,42,0.4)' }}>
