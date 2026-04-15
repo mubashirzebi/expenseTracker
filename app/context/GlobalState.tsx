@@ -57,6 +57,7 @@ type GlobalStateContextType = {
   detectedBackupDate: Date | null;
   restoreInternalBackup: () => Promise<void>;
   getBusinessDateString: (overrideDate?: Date, overrideCutoff?: string) => string;
+  getBusinessDate: (overrideDate?: Date, overrideCutoff?: string) => Date;
   updateTransaction: (id: string, updates: { amount?: number; category?: string; note?: string }) => Promise<void>;
   deleteTransaction: (id: string) => Promise<void>;
   exportDatabase: (isAutoBackup?: boolean) => Promise<void>;
@@ -257,7 +258,7 @@ export function GlobalProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
-  const getBusinessDateString = (overrideDate?: Date, overrideCutoff?: string) => {
+  const getBusinessDate = (overrideDate?: Date, overrideCutoff?: string) => {
     const activeCutoff = overrideCutoff || cutoffTime;
     const targetDate = overrideDate || new Date();
 
@@ -279,7 +280,12 @@ export function GlobalProvider({ children }: { children: React.ReactNode }) {
       businessDate.setDate(targetDate.getDate() - 1);
     }
 
-    return businessDate.toLocaleDateString('en-GB', { day: '2-digit', month: 'short' });
+    return businessDate;
+  };
+
+  const getBusinessDateString = (overrideDate?: Date, overrideCutoff?: string) => {
+    const bDate = getBusinessDate(overrideDate, overrideCutoff);
+    return bDate.toLocaleDateString('en-GB', { day: '2-digit', month: 'short' });
   };
 
   const parseAmount = (str: string) => Number(str.replace(/[^0-9.]/g, '')) || 0;
@@ -687,7 +693,9 @@ export function GlobalProvider({ children }: { children: React.ReactNode }) {
       lastBackupAt, lastCloudBackupAt,
       showWelcomeModal, setShowWelcomeModal, detectedBackupDate, restoreInternalBackup,
       getBusinessDateString,
-      updateTransaction, deleteTransaction,
+      getBusinessDate,
+      updateTransaction,
+      deleteTransaction,
       exportDatabase, importDatabase,
       persistCategory, removeCategory
     }}>

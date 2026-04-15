@@ -13,13 +13,14 @@ export default function MonthlyScreen() {
 
   const amountRef = useRef<TextInput>(null);
 
-  const { monthlyCats, addTransaction, historyData } = useGlobalState();
+  const { monthlyCats, addTransaction, historyData, getBusinessDate } = useGlobalState();
 
   const flatEntries = historyData.reduce((acc, g) => acc.concat(g.entries || []), [] as any[]);
 
   const monthEntries = flatEntries.filter(e => {
-    const d = new Date(e.createdAt);
-    return d.getMonth() === targetDate.getMonth() && d.getFullYear() === targetDate.getFullYear();
+    // Get the actual business date for this entry
+    const bDate = getBusinessDate(new Date(e.createdAt));
+    return bDate.getMonth() === targetDate.getMonth() && bDate.getFullYear() === targetDate.getFullYear();
   });
 
   const parseAmount = (str: string) => Number(str.replace(/[^0-9.]/g, '')) || 0;
@@ -63,6 +64,7 @@ export default function MonthlyScreen() {
     if (!amount) return;
 
     const saveEntry = async () => {
+      setIsSaving(true);
       try {
         const parsedAmount = Number(amount.replace(/[^0-9.]/g, ''));
 
@@ -248,7 +250,7 @@ export default function MonthlyScreen() {
             {isSaving ? (
               <ActivityIndicator color="white" />
             ) : (
-              <Text className="text-white font-bold text-lg">Commit to Ledger</Text>
+              <Text className="text-white font-bold text-lg">Save Monthly Entry</Text>
             )}
           </Pressable>
         </View>
