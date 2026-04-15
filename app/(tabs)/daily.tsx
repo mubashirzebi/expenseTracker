@@ -26,6 +26,7 @@ export default function DailyScreen() {
     const parsedAmount = Number(amount.replace(/[^0-9.]/g, ''));
 
     const saveEntry = async () => {
+      setIsSaving(true);
       try {
         await addTransaction({
           id: Math.random().toString(),

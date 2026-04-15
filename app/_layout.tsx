@@ -1,7 +1,7 @@
 import { DarkTheme, DefaultTheme, ThemeProvider } from '@react-navigation/native';
 import { Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
-import { useColorScheme } from 'react-native';
+import { Platform, useColorScheme, View, Text } from 'react-native';
 import 'react-native-reanimated';
 import '../global.css';
 import { GlobalProvider } from './context/GlobalState';
@@ -38,5 +38,3 @@ export default function RootLayout() {
     </GlobalProvider>
   );
 }
-
-import { View, Text } from 'react-native';

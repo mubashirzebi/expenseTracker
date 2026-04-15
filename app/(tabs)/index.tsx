@@ -243,7 +243,11 @@ export default function HomeScreen() {
 
          {/* Set Opening Modal */}
          <Modal visible={showOpeningModal} transparent animationType="slide">
-            <KeyboardAvoidingView className="flex-1" behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
+            <KeyboardAvoidingView 
+               className="flex-1" 
+               behavior={Platform.OS === 'ios' ? 'padding' : 'padding'}
+               keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 20}
+            >
                <View className="flex-1 justify-end" style={{ backgroundColor: 'rgba(15,23,42,0.4)' }}>
                   <View className="bg-white rounded-t-3xl pt-6 pb-12 px-6 shadow-xl">
                      <View className="flex-row justify-between items-center mb-6">
@@ -275,7 +279,11 @@ export default function HomeScreen() {
 
          {/* Set Closing Modal */}
          <Modal visible={showClosingModal} transparent animationType="slide">
-            <KeyboardAvoidingView className="flex-1" behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
+            <KeyboardAvoidingView 
+               className="flex-1" 
+               behavior={Platform.OS === 'ios' ? 'padding' : 'padding'}
+               keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 20}
+            >
                <View className="flex-1 justify-end" style={{ backgroundColor: 'rgba(15,23,42,0.4)' }}>
                   <View className="bg-white rounded-t-3xl pt-6 pb-12 px-6 shadow-xl">
                      <View className="flex-row justify-between items-center mb-6">
@@ -311,7 +319,11 @@ export default function HomeScreen() {
 
          {/* Generic Edit Value Modal */}
          <Modal visible={!!editModal} transparent animationType="fade">
-            <KeyboardAvoidingView className="flex-1" behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
+            <KeyboardAvoidingView 
+               className="flex-1" 
+               behavior={Platform.OS === 'ios' ? 'padding' : 'padding'}
+               keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 20}
+            >
                <View className="flex-1 justify-center items-center px-5" style={{ backgroundColor: 'rgba(15,23,42,0.6)' }}>
                   <View className="bg-white p-6 rounded-3xl items-center w-full shadow-2xl">
                      <Text className="text-xl font-extrabold text-textMain mb-4">{editModal?.title} (Override)</Text>

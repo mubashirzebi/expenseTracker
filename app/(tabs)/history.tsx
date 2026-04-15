@@ -164,6 +164,11 @@ export default function HistoryScreen() {
     return d.toLocaleDateString([], { day: 'numeric', month: 'short' });
   };
 
+  const formatTime = (date: any) => {
+    const d = date instanceof Date ? date : new Date(date);
+    return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: true });
+  };
+
   const onChangeDate = (event: any, selectedDate?: Date) => {
     if (event.type === 'dismissed') {
       setShowPicker(null);
@@ -239,7 +244,7 @@ export default function HistoryScreen() {
           {/* Quick Analysis Overview */}
           <View className="bg-primaryDark rounded-2xl p-4 mb-6 shadow-sm flex-row items-center justify-between">
             <View>
-              <Text className="text-white text-xs font-semibold uppercase mb-1">Total Found</Text>
+              <Text className="text-white text-xs font-semibold uppercase mb-1">Total Funds</Text>
               <Text className="text-white text-2xl font-extrabold pb-0">
                 {visibleTotal < 0 ? '-' : ''}₹{Math.abs(visibleTotal).toLocaleString(undefined, { minimumFractionDigits: 2 })}
               </Text>
@@ -310,8 +315,8 @@ export default function HistoryScreen() {
                             {entry.note ? (
                               <Text className="text-textMuted text-xs font-medium">{entry.note}</Text>
                             ) : null}
-                            <Text className="text-textMuted text-xs font-medium mt-1">
-                              {entry.period} • {formatDate(entry.createdAt)}
+                            <Text className="text-textMuted text-[10px] font-bold mt-1 uppercase tracking-tighter">
+                              {entry.period} • {formatDate(entry.createdAt)} • {formatTime(entry.createdAt)}
                             </Text>
                           </View>
                         </View>
