@@ -16,7 +16,9 @@ export default function SettingsScreen() {
 
    const needsCloudBackup = !lastCloudBackupAt || (Date.now() - new Date(lastCloudBackupAt).getTime() > 7 * 24 * 60 * 60 * 1000);
    const [showBackupTimePicker, setShowBackupTimePicker] = useState(false);
+   const [showCutoffTimePicker, setShowCutoffTimePicker] = useState(false);
    const [backupTimeDate, setBackupTimeDate] = useState(new Date());
+   const [cutoffTimeDate, setCutoffTimeDate] = useState(new Date());
 
    // Data Export States
    const [isExporting, setIsExporting] = useState(false);
@@ -43,20 +45,30 @@ export default function SettingsScreen() {
       }
    };
 
+   const formatTimeFromDate = (date: Date) => {
+      const hours = date.getHours();
+      const minutes = date.getMinutes();
+      const modifier = hours >= 12 ? 'PM' : 'AM';
+      const displayHours = hours % 12 || 12;
+      const displayMinutes = minutes.toString().padStart(2, '0');
+      return `${displayHours}:${displayMinutes} ${modifier}`;
+   };
+
    const handleBackupTimeChange = (event: any, selectedDate?: Date) => {
-      // IMPORTANT: Always hide the picker first to prevent the 'reappearing' bug on Android
       setShowBackupTimePicker(false);
-
       if (event.type === 'dismissed') return;
-
       if (selectedDate) {
          setBackupTimeDate(selectedDate);
-         const hours = selectedDate.getHours();
-         const minutes = selectedDate.getMinutes();
-         const modifier = hours >= 12 ? 'PM' : 'AM';
-         const displayHours = hours % 12 || 12;
-         const displayMinutes = minutes.toString().padStart(2, '0');
-         setTempBackupTime(`${displayHours}:${displayMinutes} ${modifier}`);
+         setTempBackupTime(formatTimeFromDate(selectedDate));
+      }
+   };
+
+   const handleCutoffTimeChange = (event: any, selectedDate?: Date) => {
+      setShowCutoffTimePicker(false);
+      if (event.type === 'dismissed') return;
+      if (selectedDate) {
+         setCutoffTimeDate(selectedDate);
+         setTempTime(formatTimeFromDate(selectedDate));
       }
    };
 
@@ -134,12 +146,20 @@ export default function SettingsScreen() {
                         )}
                      </View>
                   </View>
-                  <Switch
-                     value={autoBackupEnabled}
-                     onValueChange={setAutoBackupEnabled}
-                     trackColor={{ false: '#cbd5e1', true: '#10b981' }}
-                     thumbColor={autoBackupEnabled ? '#10b981' : '#f1f5f9'}
-                  />
+                  <View className="flex-row items-center">
+                     <Pressable 
+                        onPress={() => exportDatabase(false, true)}
+                        className="bg-emerald-50 px-3 py-1.5 rounded-full mr-3 active:bg-emerald-100"
+                     >
+                        <Text className="text-emerald-700 text-[10px] font-bold uppercase">Backup Now</Text>
+                     </Pressable>
+                     <Switch
+                        value={autoBackupEnabled}
+                        onValueChange={setAutoBackupEnabled}
+                        trackColor={{ false: '#cbd5e1', true: '#10b981' }}
+                        thumbColor={autoBackupEnabled ? '#10b981' : '#f1f5f9'}
+                     />
+                  </View>
                </View>
                <Pressable
                   onPress={() => { setTempBackupTime(autoBackupTime); setShowBackupTimeModal(true); }}
@@ -227,16 +247,30 @@ export default function SettingsScreen() {
                         ))}
                      </View>
 
-                     <Text className="text-textMuted font-bold text-xs uppercase mb-2 ml-1">Or Type Custom Box</Text>
-                     <View className="flex-row items-center border border-slate-200 rounded-2xl px-5 py-4 mb-8 bg-slate-50">
+                     <Text className="text-textMuted font-bold text-xs uppercase mb-2 ml-1">Or Pick Custom Time</Text>
+                     <Pressable
+                        onPress={() => setShowCutoffTimePicker(true)}
+                        className="flex-row items-center border border-slate-200 rounded-2xl px-5 py-4 mb-8 bg-slate-50"
+                     >
                         <Ionicons name="time-outline" size={20} color="#64748b" className="mr-3" />
-                        <TextInput
-                           value={tempTime}
-                           onChangeText={setTempTime}
-                           placeholder="e.g. 04:30 AM"
-                           className="flex-1 text-lg font-bold text-textMain ml-2"
-                        />
-                     </View>
+                        <Text className="flex-1 text-lg font-bold text-textMain ml-2">
+                           {tempTime || cutoffTime}
+                        </Text>
+                        <Ionicons name="chevron-down" size={16} color="#64748b" />
+                     </Pressable>
+
+                     {showCutoffTimePicker && (
+                        <View style={{ marginTop: 10 }}>
+                           <DateTimePicker
+                              value={cutoffTimeDate}
+                              mode="time"
+                              is24Hour={false}
+                              display="default"
+                              onChange={handleCutoffTimeChange}
+                              style={{ width: '100%' }}
+                           />
+                        </View>
+                     )}
 
                      <Pressable onPress={handleSaveTime} className="bg-primaryDark py-4 rounded-xl items-center shadow-sm">
                         <Text className="text-white font-bold text-lg">Save Preference</Text>

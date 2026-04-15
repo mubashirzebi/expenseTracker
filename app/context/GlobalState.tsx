@@ -60,7 +60,7 @@ type GlobalStateContextType = {
   getBusinessDate: (overrideDate?: Date, overrideCutoff?: string) => Date;
   updateTransaction: (id: string, updates: { amount?: number; category?: string; note?: string }) => Promise<void>;
   deleteTransaction: (id: string) => Promise<void>;
-  exportDatabase: (isAutoBackup?: boolean) => Promise<void>;
+  exportDatabase: (isAutoBackup?: boolean, skipShare?: boolean) => Promise<void>;
   importDatabase: () => Promise<void>;
   persistCategory: (name: string, tabContext: 'Daily' | 'Monthly') => Promise<void>;
   removeCategory: (id: string, tabContext: 'Daily' | 'Monthly') => Promise<void>;
@@ -556,13 +556,13 @@ export function GlobalProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
-  const exportDatabase = async (isAutoBackup: boolean = false) => {
+  const exportDatabase = async (isAutoBackup: boolean = false, skipShare: boolean = false) => {
     try {
       const dbPath = FileSystem.documentDirectory + 'SQLite/expense_tracker.db';
       const fileInfo = await FileSystem.getInfoAsync(dbPath);
 
       if (!fileInfo.exists) {
-        if (!isAutoBackup) {
+        if (!isAutoBackup && !skipShare) {
           Alert.alert("Error", "Database file not found. Make sure you have added some records first.");
         }
         return;
@@ -573,7 +573,7 @@ export function GlobalProvider({ children }: { children: React.ReactNode }) {
         await FileSystem.makeDirectoryAsync(FileSystem.cacheDirectory, { intermediates: true }).catch(() => { });
       }
 
-      // Internal path for \"Welcome Back\" detection (persistent across cache clears)
+      // Internal path for "Welcome Back" detection (persistent across cache clears)
       const masterBackupPath = FileSystem.documentDirectory + (isAutoBackup ? 'ExpenseTracker_AutoBackup.db' : 'ExpenseTracker_Backup.db');
       
       // External path for sharing/export
@@ -594,18 +594,20 @@ export function GlobalProvider({ children }: { children: React.ReactNode }) {
       setLastBackupAt(now);
       const updateFields: any = { lastBackupAt: now };
       
-      // If it's a manual export, it counts as a Cloud Backup
-      if (!isAutoBackup) {
+      // If it's a manual export (not auto and not skipped), it counts as a Cloud Backup
+      if (!isAutoBackup && !skipShare) {
          setLastCloudBackupAt(now);
          updateFields.lastCloudBackupAt = now;
       }
 
-      db.update(schema.users)
+      await db.update(schema.users)
         .set(updateFields)
-        .where(eq(schema.users.id, DEFAULT_USER))
-        .catch(e => console.error("Failed to update backup timestamps", e));
+        .where(eq(schema.users.id, DEFAULT_USER));
 
-      if (isAutoBackup) return;
+      if (isAutoBackup || skipShare) {
+        if (skipShare) Alert.alert("Backup Successful", "A secure copy of your database has been saved to your phone's internal memory.");
+        return;
+      }
 
       const isAvailable = await Sharing.isAvailableAsync();
       if (isAvailable) {
