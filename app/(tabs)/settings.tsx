@@ -7,7 +7,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useGlobalState } from '../context/GlobalState';
 
 export default function SettingsScreen() {
-   const { cutoffTime, setCutoffTime, autoBackupTime, setAutoBackupTime, autoBackupEnabled, setAutoBackupEnabled, exportDatabase, importDatabase } = useGlobalState();
+   const { cutoffTime, setCutoffTime, autoBackupTime, setAutoBackupTime, autoBackupEnabled, setAutoBackupEnabled, lastBackupAt, exportDatabase, importDatabase } = useGlobalState();
 
    const [showTimeModal, setShowTimeModal] = useState(false);
    const [showBackupTimeModal, setShowBackupTimeModal] = useState(false);
@@ -42,6 +42,11 @@ export default function SettingsScreen() {
    };
 
    const handleBackupTimeChange = (event: any, selectedDate?: Date) => {
+      // IMPORTANT: Always hide the picker first to prevent the 'reappearing' bug on Android
+      setShowBackupTimePicker(false);
+
+      if (event.type === 'dismissed') return;
+
       if (selectedDate) {
          setBackupTimeDate(selectedDate);
          const hours = selectedDate.getHours();
@@ -95,15 +100,19 @@ export default function SettingsScreen() {
                   </View>
                   <Ionicons name="chevron-forward" size={20} color="#94a3b8" />
                </Pressable>
-               <Pressable
-                  onPress={() => setAutoBackupEnabled(!autoBackupEnabled)}
-                  className="flex-row justify-between items-center px-5 py-4 border-b border-slate-50 active:bg-slate-50"
-               >
+               <View className="bg-white border-b border-slate-100 px-5 py-4 flex-row justify-between items-center">
                   <View className="flex-row items-center">
                      <View className="bg-orange-50 p-2 rounded-lg mr-3">
                         <Ionicons name="time" size={20} color="#f97316" />
                      </View>
-                     <Text className="text-textMain font-semibold text-base">Auto Backup</Text>
+                     <View>
+                        <Text className="text-textMain font-semibold text-base">Auto Backup</Text>
+                        {lastBackupAt && (
+                           <Text className="text-[10px] text-primary font-bold uppercase mt-0.5">
+                              Last: {lastBackupAt.toLocaleDateString([], { day: 'numeric', month: 'short' })} • {lastBackupAt.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                           </Text>
+                        )}
+                     </View>
                   </View>
                   <Switch
                      value={autoBackupEnabled}
@@ -111,7 +120,7 @@ export default function SettingsScreen() {
                      trackColor={{ false: '#cbd5e1', true: '#10b981' }}
                      thumbColor={autoBackupEnabled ? '#10b981' : '#f1f5f9'}
                   />
-               </Pressable>
+               </View>
                <Pressable
                   onPress={() => { setTempBackupTime(autoBackupTime); setShowBackupTimeModal(true); }}
                   className="flex-row justify-between items-center px-5 py-4 border-b border-slate-50 active:bg-slate-50"

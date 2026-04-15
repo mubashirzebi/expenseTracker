@@ -30,15 +30,14 @@ export default function HistoryScreen() {
   const [customEndDate, setCustomEndDate] = useState<Date | null>(null);
   const [showPicker, setShowPicker] = useState<'start' | 'end' | null>(null);
 
-  // Combine all active categories from both tabs
-  const allCats = [
-    ...new Set([
-      ...dailyCats.filter(c => !c.isArchived).map(c => c.name),
-      ...monthlyCats.filter(c => !c.isArchived).map(c => c.name)
-    ])
+  // Collect ALL categories that exist in history to ensure archived ones can still be filtered
+  const historyCats = [
+    ...new Set(
+      historyData.flatMap(g => g.entries.map(e => e.category))
+    )
   ].sort();
-
-  const categories = ['All', ...allCats];
+  
+  const categories = ['All', ...historyCats];
   const types = ['Both', 'Income', 'Expense'];
 
   // Edit State

@@ -50,6 +50,7 @@ type GlobalStateContextType = {
   setAutoBackupTime: React.Dispatch<React.SetStateAction<string>>;
   autoBackupEnabled: boolean;
   setAutoBackupEnabled: React.Dispatch<React.SetStateAction<boolean>>;
+  lastBackupAt: Date | null;
   getBusinessDateString: (overrideDate?: Date, overrideCutoff?: string) => string;
   updateTransaction: (id: string, updates: { amount?: number; category?: string; note?: string }) => Promise<void>;
   deleteTransaction: (id: string) => Promise<void>;
@@ -71,6 +72,7 @@ export function GlobalProvider({ children }: { children: React.ReactNode }) {
   const [cutoffTime, setCutoffTimeState] = useState('03:00 AM');
   const [autoBackupTime, setAutoBackupTimeState] = useState('09:00 PM');
   const [autoBackupEnabled, setAutoBackupEnabledState] = useState(false);
+  const [lastBackupAt, setLastBackupAt] = useState<Date | null>(null);
 
   // Hardcoded for now until Auth is implemented
   const DEFAULT_USER = 'user_123';
@@ -79,34 +81,27 @@ export function GlobalProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     if (!autoBackupEnabled) return;
 
-    const checkAndRunBackup = () => {
-      const now = new Date();
-      const [hours, minutes] = parseTime(autoBackupTime);
+    const [hours, minutes] = parseTime(autoBackupTime);
+    const now = new Date();
+    const backupTime = new Date();
+    backupTime.setHours(hours, minutes, 0, 0);
 
-      const backupTime = new Date();
-      backupTime.setHours(hours, minutes, 0, 0);
+    // If backup time has passed today, schedule for tomorrow
+    if (now >= backupTime) {
+      backupTime.setDate(backupTime.getDate() + 1);
+    }
 
-      // If backup time has passed today, schedule for tomorrow
-      if (now > backupTime) {
-        backupTime.setDate(backupTime.getDate() + 1);
-      }
+    const timeUntilBackup = backupTime.getTime() - now.getTime();
+    console.log(`Scheduling next auto-backup for ${backupTime.toLocaleTimeString()} (${Math.round(timeUntilBackup / 1000 / 60)} mins)`);
 
-      const timeUntilBackup = backupTime.getTime() - now.getTime();
-
-      const timerId = setTimeout(() => {
-        exportDatabase(true); // true = auto backup
-        checkAndRunBackup(); // Schedule next backup
-      }, timeUntilBackup);
-
-      return timerId;
-    };
-
-    const timerId = checkAndRunBackup();
+    const timerId = setTimeout(() => {
+      exportDatabase(true); // true = auto backup
+    }, timeUntilBackup);
 
     return () => {
       if (timerId) clearTimeout(timerId);
     };
-  }, [autoBackupEnabled, autoBackupTime]);
+  }, [autoBackupEnabled, autoBackupTime, lastBackupAt]);
 
   const parseTime = (timeStr: string): [number, number] => {
     const match = timeStr.match(/(\d+):(\d+)\s*(AM|PM)?/i);
@@ -152,6 +147,10 @@ export function GlobalProvider({ children }: { children: React.ReactNode }) {
 
       if (user && user.autoBackupEnabled !== undefined && user.autoBackupEnabled !== null) {
         setAutoBackupEnabledState(user.autoBackupEnabled);
+      }
+
+      if (user && user.lastBackupAt) {
+        setLastBackupAt(user.lastBackupAt);
       }
 
       // 1. Load Categories
@@ -544,10 +543,19 @@ export function GlobalProvider({ children }: { children: React.ReactNode }) {
         to: backupPath
       });
 
+      const now = new Date();
       if (isAutoBackup) {
-        console.log('Auto backup completed at:', new Date().toISOString());
-        return;
+        console.log('Auto backup completed at:', now.toISOString());
       }
+      
+      // Update DB and State for both Auto and Manual successful exports
+      setLastBackupAt(now);
+      db.update(schema.users)
+        .set({ lastBackupAt: now })
+        .where(eq(schema.users.id, DEFAULT_USER))
+        .catch(e => console.error("Failed to update last backup timestamp", e));
+
+      if (isAutoBackup) return;
 
       const isAvailable = await Sharing.isAvailableAsync();
       if (isAvailable) {
@@ -622,6 +630,7 @@ export function GlobalProvider({ children }: { children: React.ReactNode }) {
       cutoffTime, setCutoffTime,
       autoBackupTime, setAutoBackupTime,
       autoBackupEnabled, setAutoBackupEnabled,
+      lastBackupAt,
       getBusinessDateString,
       updateTransaction, deleteTransaction,
       exportDatabase, importDatabase,

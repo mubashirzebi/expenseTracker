@@ -149,8 +149,8 @@ export default function HomeScreen() {
                   <View>
                      <View className="flex-row items-center mb-1">
                         <Text className="text-white text-xs uppercase tracking-wider font-semibold mr-1">Opening Amount</Text>
-                        <Pressable onPress={() => { setTempValue(openingAmount?.toString() || ''); setEditModal({ title: 'Base Opening', value: '', onSave: setOpeningAmount }); }} className="bg-white opacity-70 p-1 rounded-full">
-                           <Ionicons name="pencil" size={10} color="white" />
+                        <Pressable onPress={() => { setTempValue(openingAmount?.toString() || ''); setEditModal({ title: 'Base Opening', value: '', onSave: setOpeningAmount }); }} className="bg-white/90 p-1.5 rounded-full shadow-sm">
+                           <Ionicons name="pencil" size={10} color="#059669" />
                         </Pressable>
                      </View>
                      <Text className="text-white text-2xl font-bold">{openingAmount !== null ? `₹${openingAmount.toLocaleString()}` : 'Not Set'}</Text>
@@ -158,8 +158,8 @@ export default function HomeScreen() {
                   <View className="items-end">
                      <View className="flex-row items-center mb-1">
                         <Text className="text-white text-xs uppercase tracking-wider font-semibold mr-1">Closing Balance</Text>
-                        <Pressable onPress={() => { setTempValue(closingBalance?.toString() || ''); setEditModal({ title: 'Base Closing', value: '', onSave: setClosingBalance }); }} className="bg-white opacity-70 p-1 rounded-full">
-                           <Ionicons name="pencil" size={10} color="white" />
+                        <Pressable onPress={() => { setTempValue(closingBalance?.toString() || ''); setEditModal({ title: 'Base Closing', value: '', onSave: setClosingBalance }); }} className="bg-white/90 p-1.5 rounded-full shadow-sm">
+                           <Ionicons name="pencil" size={10} color="#059669" />
                         </Pressable>
                      </View>
                      <Text className="text-white text-2xl font-bold">{closingBalance !== null ? `₹${closingBalance.toLocaleString()}` : 'Pending'}</Text>

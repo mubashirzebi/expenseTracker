@@ -39,7 +39,11 @@ export default function ManageCategoriesScreen() {
       </View>
 
       <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} className="flex-1">
-          <ScrollView className="flex-1 px-5 pt-6" showsVerticalScrollIndicator={false}>
+          <ScrollView 
+            className="flex-1 px-5 pt-6" 
+            showsVerticalScrollIndicator={false}
+            keyboardShouldPersistTaps="handled"
+          >
             
             {/* Context Notice */}
             <View className="bg-incomeLight p-4 rounded-2xl mb-6 flex-row">

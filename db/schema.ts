@@ -10,6 +10,7 @@ export const users = sqliteTable('users', {
   cutoffTime: text('cutoff_time').default('03:00 AM'),
   autoBackupTime: text('auto_backup_time').default('09:00 PM'),
   autoBackupEnabled: integer('auto_backup_enabled', { mode: 'boolean' }).default(false),
+  lastBackupAt: integer('last_backup_at', { mode: 'timestamp' }),
   createdAt: integer('created_at', { mode: 'timestamp' }).notNull(),
 });
 

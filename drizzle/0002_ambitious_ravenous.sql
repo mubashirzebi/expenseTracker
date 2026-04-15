@@ -1,0 +1,1 @@
+ALTER TABLE `users` ADD `last_backup_at` integer;
