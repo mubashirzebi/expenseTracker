@@ -243,10 +243,20 @@ export function GlobalProvider({ children }: { children: React.ReactNode }) {
 
       // 4. Welcome Detection: If no data, check for local backup file
       if (txs.length === 0) {
-        const backupPath = FileSystem.documentDirectory + 'ExpenseTracker_Backup.db';
-        const info = await FileSystem.getInfoAsync(backupPath);
-        if (info.exists) {
-          setDetectedBackupDate(info.modificationTime ? new Date(info.modificationTime * 1000) : new Date());
+        const manualBackup = FileSystem.documentDirectory + 'ExpenseTracker_Backup.db';
+        const autoBackup = FileSystem.documentDirectory + 'ExpenseTracker_AutoBackup.db';
+        
+        const [manualInfo, autoInfo] = await Promise.all([
+          FileSystem.getInfoAsync(manualBackup),
+          FileSystem.getInfoAsync(autoBackup)
+        ]);
+
+        if (manualInfo.exists || autoInfo.exists) {
+          const latestInfo = (manualInfo.exists && autoInfo.exists)
+            ? (manualInfo.modificationTime || 0) > (autoInfo.modificationTime || 0) ? manualInfo : autoInfo
+            : (manualInfo.exists ? manualInfo : autoInfo);
+
+          setDetectedBackupDate(latestInfo.modificationTime ? new Date(latestInfo.modificationTime * 1000) : new Date());
           setShowWelcomeModal(true);
         }
       }
@@ -313,8 +323,8 @@ export function GlobalProvider({ children }: { children: React.ReactNode }) {
     .filter(e => {
       const d = new Date(e.createdAt);
       const isThisMonth = d.getMonth() === currentMonth && d.getFullYear() === currentYear;
-      // Include all monthly items + daily items from the current month
-      return (e.period === 'monthly' || (e.period === 'daily' && isThisMonth)) && e.type === 'income';
+      // Include only items from the current month
+      return isThisMonth && e.type === 'income';
     })
     .reduce((acc, e) => acc + parseAmount(e.amount), 0);
 
@@ -322,8 +332,8 @@ export function GlobalProvider({ children }: { children: React.ReactNode }) {
     .filter(e => {
       const d = new Date(e.createdAt);
       const isThisMonth = d.getMonth() === currentMonth && d.getFullYear() === currentYear;
-      // Include all monthly items + daily items from the current month
-      return (e.period === 'monthly' || (e.period === 'daily' && isThisMonth)) && e.type === 'expense';
+      // Include only items from the current month
+      return isThisMonth && e.type === 'expense';
     })
     .reduce((acc, e) => acc + parseAmount(e.amount), 0);
 

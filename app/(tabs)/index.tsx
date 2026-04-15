@@ -128,7 +128,7 @@ export default function HomeScreen() {
                         <Text className="text-textMuted text-xs font-bold uppercase ml-1">Month Income</Text>
                      </View>
                   </View>
-                  <Text className="text-textMain text-lg font-bold">₹{(dailyIncome + monthlyIncome).toLocaleString()}</Text>
+                  <Text className="text-textMain text-lg font-bold">₹{monthlyIncome.toLocaleString()}</Text>
                </View>
 
                <View className="flex-1 bg-white p-4 rounded-2xl shadow-sm border border-slate-100">
@@ -138,7 +138,7 @@ export default function HomeScreen() {
                         <Text className="text-textMuted text-xs font-bold uppercase ml-1">Month Expense</Text>
                      </View>
                   </View>
-                  <Text className="text-textMain text-lg font-bold">₹{(dailyExpense + monthlyExpense).toLocaleString()}</Text>
+                  <Text className="text-textMain text-lg font-bold">₹{monthlyExpense.toLocaleString()}</Text>
                </View>
             </View>
 
@@ -245,7 +245,7 @@ export default function HomeScreen() {
          <Modal visible={showOpeningModal} transparent animationType="slide">
             <KeyboardAvoidingView 
                className="flex-1" 
-               behavior={Platform.OS === 'ios' ? 'padding' : 'padding'}
+               behavior={Platform.OS === 'ios' ? 'padding' : undefined}
                keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 20}
             >
                <View className="flex-1 justify-end" style={{ backgroundColor: 'rgba(15,23,42,0.4)' }}>
@@ -281,7 +281,7 @@ export default function HomeScreen() {
          <Modal visible={showClosingModal} transparent animationType="slide">
             <KeyboardAvoidingView 
                className="flex-1" 
-               behavior={Platform.OS === 'ios' ? 'padding' : 'padding'}
+               behavior={Platform.OS === 'ios' ? 'padding' : undefined}
                keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 20}
             >
                <View className="flex-1 justify-end" style={{ backgroundColor: 'rgba(15,23,42,0.4)' }}>
