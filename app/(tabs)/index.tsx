@@ -14,7 +14,8 @@ export default function HomeScreen() {
       openingAmount, setOpeningAmount,
       closingBalance, setClosingBalance,
       addTransaction,
-      getBusinessDateString
+      getBusinessDateString,
+      showWelcomeModal, setShowWelcomeModal, detectedBackupDate, restoreInternalBackup, importDatabase
    } = useGlobalState();
 
    // Modals
@@ -185,6 +186,47 @@ export default function HomeScreen() {
             </View>
 
          </ScrollView>
+
+      {/* Welcome / Restore Detection Modal */}
+      <Modal visible={showWelcomeModal} transparent animationType="fade">
+         <View className="flex-1 bg-slate-900 justify-center items-center px-5">
+            <View className="bg-white w-full rounded-[40px] overflow-hidden p-8 shadow-2xl items-center">
+               <View className="bg-incomeLight w-20 h-20 rounded-full justify-center items-center mb-6">
+                  <Ionicons name="cloud-download" size={40} color="#10b981" />
+               </View>
+               
+               <Text className="text-2xl font-extrabold text-textMain mb-2 text-center">Welcome Back!</Text>
+               <Text className="text-center text-textMuted font-medium leading-relaxed mb-8">
+                  We found an existing backup on your phone from <Text className="text-primary font-bold">{detectedBackupDate?.toLocaleDateString()}</Text>. Would you like to restore your history and categories?
+               </Text>
+
+               <View className="w-full space-y-4">
+                  <Pressable 
+                     onPress={restoreInternalBackup}
+                     className="bg-primaryDark py-5 rounded-2xl items-center shadow-md active:scale-95 transition-transform"
+                  >
+                     <Text className="text-white font-bold text-lg">Yes, Restore Everything</Text>
+                  </Pressable>
+
+                  <Pressable 
+                     onPress={() => { setShowWelcomeModal(false); importDatabase(); }}
+                     className="bg-white border-2 border-slate-100 py-4 rounded-2xl items-center active:bg-slate-50"
+                     style={{ marginTop: 12 }}
+                  >
+                     <Text className="text-textMain font-bold">Import from Google Drive/Cloud</Text>
+                  </Pressable>
+
+                  <Pressable 
+                     onPress={() => setShowWelcomeModal(false)}
+                     className="py-3 items-center"
+                     style={{ marginTop: 12 }}
+                  >
+                     <Text className="text-slate-400 font-bold uppercase tracking-widest text-xs">Start Fresh Instead</Text>
+                  </Pressable>
+               </View>
+            </View>
+         </View>
+      </Modal>
 
          {/* Floating CTA */}
          <View className="absolute bottom-6 left-5 right-5">

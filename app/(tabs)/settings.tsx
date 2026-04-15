@@ -7,12 +7,14 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useGlobalState } from '../context/GlobalState';
 
 export default function SettingsScreen() {
-   const { cutoffTime, setCutoffTime, autoBackupTime, setAutoBackupTime, autoBackupEnabled, setAutoBackupEnabled, lastBackupAt, exportDatabase, importDatabase } = useGlobalState();
+   const { cutoffTime, setCutoffTime, autoBackupTime, setAutoBackupTime, autoBackupEnabled, setAutoBackupEnabled, lastBackupAt, lastCloudBackupAt, exportDatabase, importDatabase } = useGlobalState();
 
    const [showTimeModal, setShowTimeModal] = useState(false);
    const [showBackupTimeModal, setShowBackupTimeModal] = useState(false);
    const [tempTime, setTempTime] = useState('');
-   const [tempBackupTime, setTempBackupTime] = useState('');
+   const [tempBackupTime, setTempBackupTime] = useState(autoBackupTime);
+
+   const needsCloudBackup = !lastCloudBackupAt || (Date.now() - new Date(lastCloudBackupAt).getTime() > 7 * 24 * 60 * 60 * 1000);
    const [showBackupTimePicker, setShowBackupTimePicker] = useState(false);
    const [backupTimeDate, setBackupTimeDate] = useState(new Date());
 
@@ -67,6 +69,24 @@ export default function SettingsScreen() {
          </View>
 
          <ScrollView className="flex-1" showsVerticalScrollIndicator={false}>
+            <View className="mt-4 mb-20 px-5">
+
+               {/* Cloud Backup Reminder Banner */}
+               {needsCloudBackup && (
+                  <Pressable 
+                     onPress={() => exportDatabase(false)}
+                     className="bg-orange-50 border border-orange-100 rounded-3xl p-5 mb-8 flex-row items-center border-l-4 border-l-orange-500 shadow-sm active:bg-orange-100"
+                  >
+                     <View className="bg-orange-500 w-12 h-12 rounded-full items-center justify-center mr-4">
+                        <Ionicons name="cloud-upload-outline" size={24} color="white" />
+                     </View>
+                     <View className="flex-1">
+                        <Text className="text-textMain font-bold text-base">Cloud Backup Needed</Text>
+                        <Text className="text-textMuted text-xs mt-0.5">Your local files are safe, but a cloud backup is recommended for ultimate security.</Text>
+                     </View>
+                     <Ionicons name="chevron-forward" size={18} color="#94a3b8" />
+                  </Pressable>
+               )}
 
             {/* Section 1 */}
             <Text className="px-6 text-textMuted font-bold text-xs uppercase mb-2">Preferences</Text>
@@ -171,8 +191,8 @@ export default function SettingsScreen() {
                <Text className="text-textMain text-xl font-extrabold">MUBASHIR ZEBI</Text>
                <View className="w-12 h-1 bg-primary rounded-full mt-2" />
             </View>
-
-         </ScrollView>
+         </View>
+      </ScrollView>
 
          {/* --- CUTOFF TIME MODAL --- */}
          <Modal visible={showTimeModal} transparent animationType="slide">

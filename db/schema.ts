@@ -11,6 +11,7 @@ export const users = sqliteTable('users', {
   autoBackupTime: text('auto_backup_time').default('09:00 PM'),
   autoBackupEnabled: integer('auto_backup_enabled', { mode: 'boolean' }).default(false),
   lastBackupAt: integer('last_backup_at', { mode: 'timestamp' }),
+  lastCloudBackupAt: integer('last_cloud_backup_at', { mode: 'timestamp' }),
   createdAt: integer('created_at', { mode: 'timestamp' }).notNull(),
 });
 

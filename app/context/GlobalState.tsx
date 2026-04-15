@@ -51,10 +51,15 @@ type GlobalStateContextType = {
   autoBackupEnabled: boolean;
   setAutoBackupEnabled: React.Dispatch<React.SetStateAction<boolean>>;
   lastBackupAt: Date | null;
+  lastCloudBackupAt: Date | null;
+  showWelcomeModal: boolean;
+  setShowWelcomeModal: (show: boolean) => void;
+  detectedBackupDate: Date | null;
+  restoreInternalBackup: () => Promise<void>;
   getBusinessDateString: (overrideDate?: Date, overrideCutoff?: string) => string;
   updateTransaction: (id: string, updates: { amount?: number; category?: string; note?: string }) => Promise<void>;
   deleteTransaction: (id: string) => Promise<void>;
-  exportDatabase: () => Promise<void>;
+  exportDatabase: (isAutoBackup?: boolean) => Promise<void>;
   importDatabase: () => Promise<void>;
   persistCategory: (name: string, tabContext: 'Daily' | 'Monthly') => Promise<void>;
   removeCategory: (id: string, tabContext: 'Daily' | 'Monthly') => Promise<void>;
@@ -73,6 +78,9 @@ export function GlobalProvider({ children }: { children: React.ReactNode }) {
   const [autoBackupTime, setAutoBackupTimeState] = useState('09:00 PM');
   const [autoBackupEnabled, setAutoBackupEnabledState] = useState(false);
   const [lastBackupAt, setLastBackupAt] = useState<Date | null>(null);
+  const [lastCloudBackupAt, setLastCloudBackupAt] = useState<Date | null>(null);
+  const [showWelcomeModal, setShowWelcomeModal] = useState(false);
+  const [detectedBackupDate, setDetectedBackupDate] = useState<Date | null>(null);
 
   // Hardcoded for now until Auth is implemented
   const DEFAULT_USER = 'user_123';
@@ -153,6 +161,10 @@ export function GlobalProvider({ children }: { children: React.ReactNode }) {
         setLastBackupAt(user.lastBackupAt);
       }
 
+      if (user && user.lastCloudBackupAt) {
+        setLastCloudBackupAt(user.lastCloudBackupAt);
+      }
+
       // 1. Load Categories
       const allCats = await db.query.categories.findMany({
         where: eq(schema.categories.userId, DEFAULT_USER)
@@ -227,6 +239,16 @@ export function GlobalProvider({ children }: { children: React.ReactNode }) {
         }
       });
       setHistoryData(groups);
+
+      // 4. Welcome Detection: If no data, check for local backup file
+      if (txs.length === 0) {
+        const backupPath = FileSystem.documentDirectory + 'ExpenseTracker_Backup.db';
+        const info = await FileSystem.getInfoAsync(backupPath);
+        if (info.exists) {
+          setDetectedBackupDate(info.modificationTime ? new Date(info.modificationTime * 1000) : new Date());
+          setShowWelcomeModal(true);
+        }
+      }
 
     } catch (e) {
       console.error("Critical DB Load Error:", e);
@@ -536,30 +558,44 @@ export function GlobalProvider({ children }: { children: React.ReactNode }) {
       const backupFileName = isAutoBackup
         ? 'ExpenseTracker_AutoBackup.db'
         : `ExpenseTracker_Backup_${new Date().toISOString().split('T')[0]}.db`;
-      const backupPath = (FileSystem.cacheDirectory || FileSystem.documentDirectory) + backupFileName;
+      
+      // Internal path for "Welcome Back" detection (persistent across cache clears)
+      const masterBackupPath = FileSystem.documentDirectory + 'ExpenseTracker_Backup.db';
+      
+      // External path for sharing/export
+      const sharePath = (FileSystem.cacheDirectory || FileSystem.documentDirectory) + backupFileName;
 
-      await FileSystem.copyAsync({
-        from: dbPath,
-        to: backupPath
-      });
+      // Save to Master location for app-detection
+      await FileSystem.copyAsync({ from: dbPath, to: masterBackupPath });
+
+      // Save to Share location for user-export
+      await FileSystem.copyAsync({ from: dbPath, to: sharePath });
 
       const now = new Date();
       if (isAutoBackup) {
         console.log('Auto backup completed at:', now.toISOString());
       }
       
-      // Update DB and State for both Auto and Manual successful exports
+      // Update DB and State
       setLastBackupAt(now);
+      const updateFields: any = { lastBackupAt: now };
+      
+      // If it's a manual export, it counts as a Cloud Backup
+      if (!isAutoBackup) {
+         setLastCloudBackupAt(now);
+         updateFields.lastCloudBackupAt = now;
+      }
+
       db.update(schema.users)
-        .set({ lastBackupAt: now })
+        .set(updateFields)
         .where(eq(schema.users.id, DEFAULT_USER))
-        .catch(e => console.error("Failed to update last backup timestamp", e));
+        .catch(e => console.error("Failed to update backup timestamps", e));
 
       if (isAutoBackup) return;
 
       const isAvailable = await Sharing.isAvailableAsync();
       if (isAvailable) {
-        await Sharing.shareAsync(backupPath, {
+        await Sharing.shareAsync(sharePath, {
           mimeType: 'application/x-sqlite3',
           dialogTitle: 'Export Expense Tracker Data',
           UTI: 'public.database'
@@ -617,6 +653,24 @@ export function GlobalProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
+  const restoreInternalBackup = async () => {
+    try {
+      const backupPath = FileSystem.documentDirectory + 'ExpenseTracker_Backup.db';
+      const dbPath = FileSystem.documentDirectory + 'SQLite/expense_tracker.db';
+
+      await FileSystem.copyAsync({
+        from: backupPath,
+        to: dbPath
+      });
+
+      Alert.alert("Restored!", "Your data has been successfully restored from your last internal backup. Please restart the app.");
+      setShowWelcomeModal(false);
+    } catch (err) {
+      console.error("Internal restore failed:", err);
+      Alert.alert("Error", "Failed to restore the internal backup file.");
+    }
+  };
+
   return (
     <GlobalContext.Provider value={{
       dailyIncome, dailyExpense,
@@ -630,7 +684,8 @@ export function GlobalProvider({ children }: { children: React.ReactNode }) {
       cutoffTime, setCutoffTime,
       autoBackupTime, setAutoBackupTime,
       autoBackupEnabled, setAutoBackupEnabled,
-      lastBackupAt,
+      lastBackupAt, lastCloudBackupAt,
+      showWelcomeModal, setShowWelcomeModal, detectedBackupDate, restoreInternalBackup,
       getBusinessDateString,
       updateTransaction, deleteTransaction,
       exportDatabase, importDatabase,
