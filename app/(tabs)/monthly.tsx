@@ -1,8 +1,11 @@
 import { Ionicons } from '@expo/vector-icons';
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, Alert, KeyboardAvoidingView, Modal, Pressable, ScrollView, Text, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useGlobalState } from '../context/GlobalState';
+
+const MIN_MONTH_OFFSET = -3; // 3 months back
+const MAX_MONTH_OFFSET = 0;  // current month
 
 export default function MonthlyScreen() {
   const [currentMonthIndex, setCurrentMonthIndex] = useState(0);
@@ -13,33 +16,27 @@ export default function MonthlyScreen() {
 
   const amountRef = useRef<TextInput>(null);
 
-  const { monthlyCats, addTransaction, historyData, getBusinessDate } = useGlobalState();
+  const { monthlyExpenseCats, monthlyIncomeCats, addTransaction, fetchMonthSummary } = useGlobalState();
 
-  const flatEntries = historyData.reduce((acc, g) => acc.concat(g.entries || []), [] as any[]);
-
-  const monthEntries = flatEntries.filter(e => {
-    // Get the actual business date for this entry
-    const bDate = getBusinessDate(new Date(e.createdAt));
-    return bDate.getMonth() === targetDate.getMonth() && bDate.getFullYear() === targetDate.getFullYear();
+  // --- Summary state (DB-fetched) ---
+  const [summary, setSummary] = useState({
+    dailyIncome: 0, dailyExpense: 0,
+    monthlyIncome: 0, monthlyExpense: 0,
   });
+  const [isSummaryLoading, setIsSummaryLoading] = useState(false);
 
-  const parseAmount = (str: string) => Number(str.replace(/[^0-9.]/g, '')) || 0;
+  useEffect(() => {
+    const load = async () => {
+      setIsSummaryLoading(true);
+      const result = await fetchMonthSummary(targetDate.getFullYear(), targetDate.getMonth());
+      setSummary(result);
+      setIsSummaryLoading(false);
+    };
+    load();
+  }, [currentMonthIndex]);
 
-  const monthDailyIncome = monthEntries
-    .filter(e => e.period === 'daily' && e.type === 'income')
-    .reduce((acc, e) => acc + parseAmount(e.amount), 0);
-
-  const monthDailyExpense = monthEntries
-    .filter(e => e.period === 'daily' && e.type === 'expense')
-    .reduce((acc, e) => acc + parseAmount(e.amount), 0);
-
-  const monthMonthlyIncome = monthEntries
-    .filter(e => e.period === 'monthly' && e.type === 'income')
-    .reduce((acc, e) => acc + parseAmount(e.amount), 0);
-
-  const monthMonthlyExpense = monthEntries
-    .filter(e => e.period === 'monthly' && e.type === 'expense')
-    .reduce((acc, e) => acc + parseAmount(e.amount), 0);
+  const { dailyIncome: monthDailyIncome, dailyExpense: monthDailyExpense,
+    monthlyIncome: monthMonthlyIncome, monthlyExpense: monthMonthlyExpense } = summary;
 
   const totalCombinedIncome = monthDailyIncome + monthMonthlyIncome;
   const totalExpenses = monthDailyExpense + monthMonthlyExpense;
@@ -55,7 +52,9 @@ export default function MonthlyScreen() {
   const [isSaving, setIsSaving] = useState(false);
   const [showSuccess, setShowSuccess] = useState(false);
 
-  const categories = monthlyCats.filter(c => !c.isArchived).map(c => c.name);
+  const categories = type === 'expense'
+    ? monthlyExpenseCats.filter(c => !c.isArchived).map(c => c.name)
+    : monthlyIncomeCats.filter(c => !c.isArchived).map(c => c.name);
 
   // Flattened classes for NativeWind V4 AST parser safety
   const isExp = type === 'expense';
@@ -112,12 +111,23 @@ export default function MonthlyScreen() {
           <Text className="text-textMain text-2xl font-extrabold mb-4">Monthly Statements</Text>
 
           <View className="flex-row justify-between items-center bg-white p-2 rounded-2xl shadow-sm border border-slate-100 mb-6">
-            <Pressable onPress={() => setCurrentMonthIndex(-1)} className="p-2 active:bg-slate-50 rounded-lg">
-              <Ionicons name="chevron-back" size={20} color={currentMonthIndex === -1 ? "#cbd5e1" : "#1e293b"} />
+            <Pressable
+              onPress={() => setCurrentMonthIndex(prev => Math.max(prev - 1, MIN_MONTH_OFFSET))}
+              disabled={currentMonthIndex <= MIN_MONTH_OFFSET}
+              className="p-2 active:bg-slate-50 rounded-lg"
+            >
+              <Ionicons name="chevron-back" size={20} color={currentMonthIndex <= MIN_MONTH_OFFSET ? "#cbd5e1" : "#1e293b"} />
             </Pressable>
-            <Text className="text-textMain font-bold text-lg">{currentTitle}</Text>
-            <Pressable onPress={() => setCurrentMonthIndex(0)} className="p-2 active:bg-slate-50 rounded-lg">
-              <Ionicons name="chevron-forward" size={20} color={currentMonthIndex === 0 ? "#cbd5e1" : "#1e293b"} />
+            <View className="flex-row items-center">
+              {isSummaryLoading && <ActivityIndicator size="small" color="#10b981" style={{ marginRight: 8 }} />}
+              <Text className="text-textMain font-bold text-lg">{currentTitle}</Text>
+            </View>
+            <Pressable
+              onPress={() => setCurrentMonthIndex(prev => Math.min(prev + 1, MAX_MONTH_OFFSET))}
+              disabled={currentMonthIndex >= MAX_MONTH_OFFSET}
+              className="p-2 active:bg-slate-50 rounded-lg"
+            >
+              <Ionicons name="chevron-forward" size={20} color={currentMonthIndex >= MAX_MONTH_OFFSET ? "#cbd5e1" : "#1e293b"} />
             </Pressable>
           </View>
 
@@ -168,14 +178,22 @@ export default function MonthlyScreen() {
           {/* Toggle Type */}
           <View className="flex-row bg-slate-200 rounded-xl p-1 mb-8">
             <Pressable
-              onPress={() => { setType('expense'); setCategory('Rent'); }}
+              onPress={() => { 
+                setType('expense'); 
+                const firstExpenseCat = monthlyExpenseCats.filter(c => !c.isArchived)[0]?.name || 'Rent';
+                setCategory(firstExpenseCat); 
+              }}
               className="flex-1 py-3 rounded-lg items-center"
               style={isExp ? { backgroundColor: 'white', shadowColor: '#000', shadowOpacity: 0.05, shadowRadius: 2, shadowOffset: { width: 0, height: 1 }, elevation: 2 } : { backgroundColor: 'transparent' }}
             >
               <Text className="font-semibold" style={{ color: isExp ? '#ef4444' : '#64748b' }}>Add Bill</Text>
             </Pressable>
             <Pressable
-              onPress={() => { setType('income'); setCategory('Salary'); }}
+              onPress={() => { 
+                setType('income'); 
+                const firstIncomeCat = monthlyIncomeCats.filter(c => !c.isArchived)[0]?.name || 'Salary';
+                setCategory(firstIncomeCat); 
+              }}
               className="flex-1 py-3 rounded-lg items-center"
               style={!isExp ? { backgroundColor: 'white', shadowColor: '#000', shadowOpacity: 0.05, shadowRadius: 2, shadowOffset: { width: 0, height: 1 }, elevation: 2 } : { backgroundColor: 'transparent' }}
             >

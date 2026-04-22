@@ -1,30 +1,40 @@
-import { View, Text, ScrollView, Pressable, TextInput, KeyboardAvoidingView, Platform, Modal } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
-import { useState } from 'react';
 import { router } from 'expo-router';
+import { useState } from 'react';
+import { KeyboardAvoidingView, Modal, Platform, Pressable, ScrollView, Text, TextInput, View } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { useGlobalState } from './context/GlobalState';
 
 export default function ManageCategoriesScreen() {
-  const [activeTab, setActiveTab] = useState('Daily');
+  const [activeTab, setActiveTab] = useState<'Daily_Expense' | 'Daily_Income' | 'Monthly_Expense' | 'Monthly_Income'>('Daily_Expense');
   const [newCat, setNewCat] = useState('');
   
   // Custom Modal State for Web Compatibility
   const [catToDelete, setCatToDelete] = useState<string | null>(null);
 
-  const { dailyCats, setDailyCats, monthlyCats, setMonthlyCats, persistCategory, removeCategory } = useGlobalState();
+  const { 
+    dailyExpenseCats, setDailyExpenseCats,
+    dailyIncomeCats, setDailyIncomeCats,
+    monthlyExpenseCats, setMonthlyExpenseCats,
+    monthlyIncomeCats, setMonthlyIncomeCats,
+    persistCategory, removeCategory 
+  } = useGlobalState();
 
-  const activeCats = activeTab === 'Daily' ? dailyCats : monthlyCats;
+  const activeCats = 
+    activeTab === 'Daily_Expense' ? dailyExpenseCats :
+    activeTab === 'Daily_Income' ? dailyIncomeCats :
+    activeTab === 'Monthly_Expense' ? monthlyExpenseCats :
+    monthlyIncomeCats;
 
   const handleAdd = () => {
     if (!newCat.trim()) return;
-    persistCategory(newCat, activeTab as 'Daily' | 'Monthly');
+    persistCategory(newCat, activeTab);
     setNewCat('');
   };
 
   const confirmDelete = () => {
     if (!catToDelete) return;
-    removeCategory(catToDelete, activeTab as 'Daily' | 'Monthly');
+    removeCategory(catToDelete, activeTab);
     setCatToDelete(null);
   };
 
@@ -55,21 +65,39 @@ export default function ManageCategoriesScreen() {
             </View>
 
             {/* Toggle Tab */}
-            <View className="flex-row bg-slate-200/60 rounded-xl p-1 mb-6">
-              <Pressable 
-                onPress={() => setActiveTab('Daily')}
-                className="flex-1 py-3 rounded-lg items-center"
-                style={activeTab === 'Daily' ? { backgroundColor: 'white', shadowColor: '#000', shadowOpacity: 0.05, shadowRadius: 2, shadowOffset: { width: 0, height: 1 }, elevation: 2 } : {}}
-              >
-                <Text className="font-bold" style={{ color: activeTab === 'Daily' ? '#1e293b' : '#64748b' }}>Daily Items</Text>
-              </Pressable>
-              <Pressable 
-                onPress={() => setActiveTab('Monthly')}
-                className="flex-1 py-3 rounded-lg items-center"
-                style={activeTab === 'Monthly' ? { backgroundColor: 'white', shadowColor: '#000', shadowOpacity: 0.05, shadowRadius: 2, shadowOffset: { width: 0, height: 1 }, elevation: 2 } : {}}
-              >
-                <Text className="font-bold" style={{ color: activeTab === 'Monthly' ? '#1e293b' : '#64748b' }}>Monthly Bills</Text>
-              </Pressable>
+            <View className="bg-slate-200/60 rounded-xl p-1 mb-6">
+              <View className="flex-row mb-1">
+                <Pressable 
+                  onPress={() => setActiveTab('Daily_Expense')}
+                  className="flex-1 py-3 rounded-lg items-center"
+                  style={activeTab === 'Daily_Expense' ? { backgroundColor: 'white', shadowColor: '#000', shadowOpacity: 0.05, shadowRadius: 2, shadowOffset: { width: 0, height: 1 }, elevation: 2 } : {}}
+                >
+                  <Text className="font-bold text-xs" style={{ color: activeTab === 'Daily_Expense' ? '#ef4444' : '#64748b' }}>Daily Expense</Text>
+                </Pressable>
+                <Pressable 
+                  onPress={() => setActiveTab('Daily_Income')}
+                  className="flex-1 py-3 rounded-lg items-center"
+                  style={activeTab === 'Daily_Income' ? { backgroundColor: 'white', shadowColor: '#000', shadowOpacity: 0.05, shadowRadius: 2, shadowOffset: { width: 0, height: 1 }, elevation: 2 } : {}}
+                >
+                  <Text className="font-bold text-xs" style={{ color: activeTab === 'Daily_Income' ? '#10b981' : '#64748b' }}>Daily Income</Text>
+                </Pressable>
+              </View>
+              <View className="flex-row">
+                <Pressable 
+                  onPress={() => setActiveTab('Monthly_Expense')}
+                  className="flex-1 py-3 rounded-lg items-center"
+                  style={activeTab === 'Monthly_Expense' ? { backgroundColor: 'white', shadowColor: '#000', shadowOpacity: 0.05, shadowRadius: 2, shadowOffset: { width: 0, height: 1 }, elevation: 2 } : {}}
+                >
+                  <Text className="font-bold text-xs" style={{ color: activeTab === 'Monthly_Expense' ? '#ef4444' : '#64748b' }}>Monthly Expense</Text>
+                </Pressable>
+                <Pressable 
+                  onPress={() => setActiveTab('Monthly_Income')}
+                  className="flex-1 py-3 rounded-lg items-center"
+                  style={activeTab === 'Monthly_Income' ? { backgroundColor: 'white', shadowColor: '#000', shadowOpacity: 0.05, shadowRadius: 2, shadowOffset: { width: 0, height: 1 }, elevation: 2 } : {}}
+                >
+                  <Text className="font-bold text-xs" style={{ color: activeTab === 'Monthly_Income' ? '#10b981' : '#64748b' }}>Monthly Income</Text>
+                </Pressable>
+              </View>
             </View>
 
             {/* Add New Category Input */}
@@ -90,14 +118,14 @@ export default function ManageCategoriesScreen() {
             </View>
             
             {/* Category List */}
-            <Text className="text-textMuted font-bold text-xs uppercase mb-3 px-1">Active {activeTab} Categories</Text>
+            <Text className="text-textMuted font-bold text-xs uppercase mb-3 px-1">Active Categories</Text>
             
             <View className="bg-white rounded-3xl overflow-hidden border border-slate-100 shadow-sm mb-20">
                {activeCats.map((cat, idx) => (
                   <View key={cat.id} className="flex-row justify-between items-center px-5 py-4" style={idx !== activeCats.length - 1 ? { borderBottomWidth: 1, borderBottomColor: '#f8fafc' } : {}}>
                      <View className="flex-row items-center">
                         <View className="bg-slate-50 w-8 h-8 rounded-full items-center justify-center mr-3">
-                           <Ionicons name={activeTab === 'Daily' ? "pricetag" : "calendar"} size={14} color="#64748b" />
+                           <Ionicons name={activeTab.startsWith('Daily') ? "pricetag" : "calendar"} size={14} color="#64748b" />
                         </View>
                         <Text className="text-textMain font-bold text-base">{cat.name}</Text>
                      </View>

@@ -1,26 +1,32 @@
 import { Ionicons } from '@expo/vector-icons';
 import DateTimePicker from '@react-native-community/datetimepicker';
-import { useState } from 'react';
-import { Alert, KeyboardAvoidingView, Modal, Platform, Pressable, ScrollView, Text, TextInput, View } from 'react-native';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import {
+  ActivityIndicator,
+  Alert,
+  KeyboardAvoidingView,
+  Modal,
+  Platform,
+  Pressable,
+  ScrollView,
+  Text,
+  TextInput,
+  View,
+} from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useGlobalState } from '../context/GlobalState';
+import { type FetchTransactionsParams, type HistoryGroup, useGlobalState } from '../context/GlobalState';
+
+const PAGE_SIZE = 15;
 
 export default function HistoryScreen() {
-  const {
-    historyData,
-    setHistoryData,
-    dailyCats,
-    monthlyCats,
-    updateTransaction,
-    deleteTransaction
-  } = useGlobalState();
+  const { fetchTransactions, updateTransaction, deleteTransaction, onTransactionAdded, offTransactionAdded, getBusinessDateString } = useGlobalState();
 
+  // --- Filter state ---
   const [activeRange, setActiveRange] = useState('All Time');
   const [activeCategory, setActiveCategory] = useState('All');
   const [activeType, setActiveType] = useState('Both');
   const [searchQuery, setSearchQuery] = useState('');
 
-  // Modals state for Dropdowns
   const [showTypeDropdown, setShowTypeDropdown] = useState(false);
   const [showCategoryDropdown, setShowCategoryDropdown] = useState(false);
   const [showRangeDropdown, setShowRangeDropdown] = useState(false);
@@ -30,75 +36,142 @@ export default function HistoryScreen() {
   const [customEndDate, setCustomEndDate] = useState<Date | null>(null);
   const [showPicker, setShowPicker] = useState<'start' | 'end' | null>(null);
 
-  // Collect ALL categories that exist in history to ensure archived ones can still be filtered
-  const historyCats = [
-    ...new Set(
-      historyData.flatMap(g => g.entries.map(e => e.category))
-    )
-  ].sort();
-  
-  const categories = ['All', ...historyCats];
-  const types = ['Both', 'Income', 'Expense'];
+  // --- Pagination & data state ---
+  const [groups, setGroups] = useState<HistoryGroup[]>([]);
+  const [total, setTotal] = useState(0);
+  const [offset, setOffset] = useState(0);
+  const [hasMore, setHasMore] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
+  const [isLoadingMore, setIsLoadingMore] = useState(false);
+  const [isInitialLoad, setIsInitialLoad] = useState(true);
 
-  // Edit State
-  const [editModal, setEditModal] = useState<{ groupIdx: number, entryIdx: number, title: string, type: string } | null>(null);
+  // All categories seen in current result set (for filter dropdown)
+  const [knownCategories, setKnownCategories] = useState<string[]>([]);
+
+  // --- Edit state ---
+  const [editModal, setEditModal] = useState<{
+    id: string; groupIdx: number; entryIdx: number; title: string; type: string;
+  } | null>(null);
   const [tempValue, setTempValue] = useState('');
 
-  const handleEditSave = () => {
-    if (editModal && tempValue) {
-      const newData = [...historyData];
+  // Debounce search
+  const searchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-      // Clean whatever they typed into a pure number
-      let cleanVal = Number(tempValue.replace(/[^0-9.]/g, ''));
-      if (isNaN(cleanVal) || cleanVal === 0) cleanVal = 0;
+  // --- Build query params from current filter state ---
+  const buildParams = useCallback((currentOffset: number): FetchTransactionsParams => {
+    const { start, end } = getRangeDates();
+    return {
+      startDate: start,
+      endDate: end,
+      type: activeType === 'Both' ? undefined : (activeType.toLowerCase() as 'income' | 'expense'),
+      category: activeCategory === 'All' ? undefined : activeCategory,
+      searchQuery: searchQuery.trim() || undefined,
+      limit: PAGE_SIZE,
+      offset: currentOffset,
+    };
+  }, [activeRange, activeCategory, activeType, searchQuery, customStartDate, customEndDate]);
 
-      const prefix = editModal.type === 'expense' ? '-₹' : '+₹';
+  // --- Initial / filter-change load ---
+  const loadPage = useCallback(async (resetOffset = true) => {
+    setIsLoading(true);
+    const currentOffset = resetOffset ? 0 : offset;
+    const result = await fetchTransactions(buildParams(currentOffset));
 
-      // Strict-mode React Native Deep Copy
-      const targetGroup = { ...newData[editModal.groupIdx] };
-      const targetEntries = [...targetGroup.entries];
-      const targetEntry = { ...targetEntries[editModal.entryIdx] };
-
-      targetEntry.amount = `${prefix}${cleanVal.toLocaleString(undefined, { minimumFractionDigits: 2 })}`;
-
-      targetEntries[editModal.entryIdx] = targetEntry;
-      targetGroup.entries = targetEntries;
-      newData[editModal.groupIdx] = targetGroup;
-
-      setHistoryData(newData);
-
-      // Update Database
-      updateTransaction(targetEntry.id, { amount: cleanVal });
+    if (resetOffset) {
+      setGroups(result.groups);
+      setOffset(PAGE_SIZE);
+      // Collect all categories from this result for the filter dropdown
+      const cats = [...new Set(result.groups.flatMap(g => g.entries.map(e => e.category)))].sort();
+      setKnownCategories(cats);
     }
-    setEditModal(null);
-    setTempValue('');
-  };
+    setTotal(result.total);
+    setHasMore(result.hasMore);
+    setIsLoading(false);
+  }, [buildParams, fetchTransactions]);
 
-  const handleDelete = (id: string) => {
-    Alert.alert(
-      "Delete Transaction",
-      "Are you sure you want to permanently remove this entry?",
-      [
-        { text: "Cancel", style: "cancel" },
-        {
-          text: "Delete",
-          style: "destructive",
-          onPress: () => deleteTransaction(id)
+  // --- Load more (append) ---
+  const loadMore = useCallback(async () => {
+    if (!hasMore || isLoadingMore) return;
+    setIsLoadingMore(true);
+    const result = await fetchTransactions(buildParams(offset));
+    setGroups(prev => {
+      // Merge new groups into existing ones
+      const merged = [...prev];
+      result.groups.forEach(newGroup => {
+        const existing = merged.find(g => g.date === newGroup.date);
+        if (existing) {
+          existing.entries.push(...newGroup.entries);
+        } else {
+          merged.push(newGroup);
         }
-      ]
-    );
-  };
+      });
+      return merged;
+    });
+    setOffset(prev => prev + PAGE_SIZE);
+    setHasMore(result.hasMore);
+    setIsLoadingMore(false);
+  }, [hasMore, isLoadingMore, offset, buildParams, fetchTransactions]);
 
-  const getRangeDates = () => {
+  // Reload when filters change
+  useEffect(() => {
+    if (searchTimer.current) clearTimeout(searchTimer.current);
+    searchTimer.current = setTimeout(() => loadPage(true), 300);
+    return () => { if (searchTimer.current) clearTimeout(searchTimer.current); };
+  }, [activeRange, activeCategory, activeType, searchQuery, customStartDate, customEndDate]);
+
+  // Initial load on mount
+  useEffect(() => {
+    if (isInitialLoad) {
+      loadPage(true);
+      setIsInitialLoad(false);
+    }
+  }, []);
+
+  // Subscribe to new transactions for optimistic updates
+  useEffect(() => {
+    const handleNewTransaction = (entry: any) => {
+      // Add to the top of the list optimistically
+      const bDateStr = getBusinessDateString(entry.createdAt);
+      const groupLabel = `Business Date: ${bDateStr}`;
+
+      setGroups(prev => {
+        const existingGroupIdx = prev.findIndex(g => g.date === groupLabel);
+        if (existingGroupIdx === -1) {
+          // New group at the top
+          return [{ date: groupLabel, entries: [entry] }, ...prev];
+        }
+        // Add to existing group
+        const newGroups = [...prev];
+        const targetGroup = { ...newGroups[existingGroupIdx] };
+        // Check if entry already exists (upsert case)
+        const existingEntryIdx = targetGroup.entries.findIndex(e => e.id === entry.id);
+        if (existingEntryIdx !== -1) {
+          targetGroup.entries = [...targetGroup.entries];
+          targetGroup.entries[existingEntryIdx] = entry;
+        } else {
+          targetGroup.entries = [entry, ...targetGroup.entries];
+        }
+        newGroups[existingGroupIdx] = targetGroup;
+        return newGroups;
+      });
+      setTotal(prev => prev + 1);
+    };
+
+    onTransactionAdded(handleNewTransaction);
+    return () => offTransactionAdded(handleNewTransaction);
+  }, [onTransactionAdded, offTransactionAdded, getBusinessDateString]);
+
+  // --- Date range helpers ---
+  const getRangeDates = (): { start: Date; end: Date } => {
     const end = new Date();
+    end.setHours(23, 59, 59, 999);
     const start = new Date();
 
     if (activeRange === 'All Time') {
       start.setFullYear(2000);
     } else if (activeRange === 'This Week') {
       const day = start.getDay();
-      const diff = start.getDate() - day + (day === 0 ? -6 : 1);
-      start.setDate(diff);
+      start.setDate(start.getDate() - day + (day === 0 ? -6 : 1));
       start.setHours(0, 0, 0, 0);
     } else if (activeRange === 'This Month') {
       start.setDate(1);
@@ -110,55 +183,65 @@ export default function HistoryScreen() {
     } else if (activeRange === 'Custom Range...' && customStartDate && customEndDate) {
       return { start: customStartDate, end: customEndDate };
     } else {
-      // Fallback to a very old date if no filter
       start.setFullYear(2000);
     }
-
-    // Set end date to end of day to include all transactions for today
-    end.setHours(23, 59, 59, 999);
-
     return { start, end };
   };
 
-  const { start: rangeStart, end: rangeEnd } = getRangeDates();
-
-  const isWithinRange = (date: any) => {
-    const d = date instanceof Date ? date : new Date(date);
-    // Compare full timestamps to include time-based filtering
-    return d >= rangeStart && d <= rangeEnd;
+  const onChangeDate = (event: any, selectedDate?: Date) => {
+    if (event.type === 'dismissed') { setShowPicker(null); return; }
+    if (showPicker === 'start' && selectedDate) {
+      setCustomStartDate(selectedDate);
+      setShowPicker('end');
+    } else if (showPicker === 'end' && selectedDate) {
+      setCustomEndDate(selectedDate);
+      setShowPicker(null);
+      setActiveRange('Custom Range...');
+    }
   };
 
-  const parseAmount = (str: string) => Number(str.replace(/[^0-9.]/g, '')) || 0;
+  // --- Edit / Delete ---
+  const handleEditSave = () => {
+    if (!editModal || !tempValue) { setEditModal(null); return; }
+    const cleanVal = Number(tempValue.replace(/[^0-9.]/g, '')) || 0;
+    const prefix = editModal.type === 'expense' ? '-₹' : '+₹';
 
-  // Dynamic Analysis Math based on current state (mock logic)
-  let visibleTotal = 0;
-  historyData.forEach(group => {
-    group.entries.forEach(entry => {
-      if (activeCategory !== 'All' && entry.category !== activeCategory) return;
-      if (activeType !== 'Both' && entry.type.toLowerCase() !== activeType.toLowerCase()) return;
-      if (!isWithinRange(entry.createdAt)) return;
+    setGroups(prev => prev.map((group, gi) => {
+      if (gi !== editModal.groupIdx) return group;
+      return {
+        ...group,
+        entries: group.entries.map((e, ei) => {
+          if (ei !== editModal.entryIdx) return e;
+          return { ...e, amount: `${prefix}${cleanVal.toLocaleString(undefined, { minimumFractionDigits: 2 })}` };
+        }),
+      };
+    }));
+    updateTransaction(editModal.id, { amount: cleanVal });
+    setEditModal(null);
+    setTempValue('');
+  };
 
-      const query = searchQuery.trim().toLowerCase();
-      const matchesSearch = !query ||
-        entry.category.toLowerCase().includes(query) ||
-        (entry.note && entry.note.toLowerCase().includes(query)) ||
-        entry.amount.toLowerCase().includes(query);
-
-      if (!matchesSearch) return;
-
-      const val = parseAmount(entry.amount);
-      if (entry.type === 'expense') visibleTotal -= val;
-      else visibleTotal += val;
-    });
-  });
+  const handleDelete = (id: string) => {
+    Alert.alert('Delete Transaction', 'Permanently remove this entry?', [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Delete', style: 'destructive',
+        onPress: () => {
+          deleteTransaction(id);
+          setGroups(prev =>
+            prev.map(g => ({ ...g, entries: g.entries.filter(e => e.id !== id) }))
+              .filter(g => g.entries.length > 0)
+          );
+        },
+      },
+    ]);
+  };
 
   const isLocked = (date: any) => {
-    if (!date) return false;
     const d = date instanceof Date ? date : new Date(date);
     return (Date.now() - d.getTime()) > 14 * 24 * 60 * 60 * 1000;
   };
 
-  // Format date for display
   const formatDate = (date: any) => {
     const d = date instanceof Date ? date : new Date(date);
     return d.toLocaleDateString([], { day: 'numeric', month: 'short' });
@@ -169,25 +252,19 @@ export default function HistoryScreen() {
     return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: true });
   };
 
-  const onChangeDate = (event: any, selectedDate?: Date) => {
-    if (event.type === 'dismissed') {
-      setShowPicker(null);
-      return;
-    }
+  // Visible total from current loaded groups
+  const parseAmount = (str: string) => Number(str.replace(/[^0-9.]/g, '')) || 0;
+  let visibleTotal = 0;
+  groups.forEach(g => g.entries.forEach(e => {
+    visibleTotal += e.type === 'expense' ? -parseAmount(e.amount) : parseAmount(e.amount);
+  }));
 
-    if (showPicker === 'start' && selectedDate) {
-      setCustomStartDate(selectedDate);
-      setShowPicker('end'); // Immediately show end picker
-    } else if (showPicker === 'end' && selectedDate) {
-      setCustomEndDate(selectedDate);
-      setShowPicker(null);
-      setActiveRange('Custom Range...');
-    }
-  };
+  const categories = ['All', ...knownCategories];
+  const types = ['Both', 'Income', 'Expense'];
 
   return (
     <SafeAreaView className="flex-1 bg-bgLight">
-      {/* Header and Search */}
+      {/* Header */}
       <View className="px-4 pt-4 pb-3 bg-white shadow-sm border-b border-slate-100 z-10">
         <Text className="text-textMain text-2xl font-extrabold mb-4 px-1">Transaction History</Text>
 
@@ -200,11 +277,15 @@ export default function HistoryScreen() {
             value={searchQuery}
             onChangeText={setSearchQuery}
           />
+          {searchQuery.length > 0 && (
+            <Pressable onPress={() => setSearchQuery('')}>
+              <Ionicons name="close-circle" size={18} color="#94a3b8" />
+            </Pressable>
+          )}
         </View>
 
-        {/* Dynamic Filters */}
+        {/* Filters */}
         <ScrollView horizontal showsHorizontalScrollIndicator={false} className="flex-row mb-1 pt-1 pb-2" contentContainerStyle={{ paddingRight: 20 }}>
-          {/* Date Range Picker Trigger */}
           <Pressable
             onPress={() => setShowRangeDropdown(true)}
             className="flex-row items-center bg-incomeLight px-4 py-2 rounded-full mr-2 border border-incomeLight"
@@ -215,10 +296,9 @@ export default function HistoryScreen() {
                 ? `${formatDate(customStartDate)} - ${customEndDate ? formatDate(customEndDate) : '...'}`
                 : activeRange}
             </Text>
-            <Ionicons name="chevron-down" size={14} color="#059669" className="ml-1" />
+            <Ionicons name="chevron-down" size={14} color="#059669" style={{ marginLeft: 4 }} />
           </Pressable>
 
-          {/* Type Dropdown Trigger */}
           <Pressable
             onPress={() => setShowTypeDropdown(true)}
             className="bg-slate-100 flex-row items-center px-4 py-2 rounded-full mr-2 border border-slate-200"
@@ -227,7 +307,6 @@ export default function HistoryScreen() {
             <Ionicons name="chevron-down" size={14} color="#64748b" />
           </Pressable>
 
-          {/* Category Dropdown Trigger */}
           <Pressable
             onPress={() => setShowCategoryDropdown(true)}
             className="bg-slate-100 flex-row items-center px-4 py-2 rounded-full mr-4 border border-slate-200"
@@ -241,64 +320,61 @@ export default function HistoryScreen() {
       <ScrollView className="flex-1" showsVerticalScrollIndicator={false}>
         <View className="pt-4 pb-20 px-5">
 
-          {/* Quick Analysis Overview */}
+          {/* Summary bar */}
           <View className="bg-primaryDark rounded-2xl p-4 mb-6 shadow-sm flex-row items-center justify-between">
             <View>
-              <Text className="text-white text-xs font-semibold uppercase mb-1">Total Funds</Text>
-              <Text className="text-white text-2xl font-extrabold pb-0">
+              <Text className="text-white text-xs font-semibold uppercase mb-1">
+                {total > 0 ? `Showing ${Math.min(offset, total)} of ${total}` : 'No results'}
+              </Text>
+              <Text className="text-white text-2xl font-extrabold">
                 {visibleTotal < 0 ? '-' : ''}₹{Math.abs(visibleTotal).toLocaleString(undefined, { minimumFractionDigits: 2 })}
               </Text>
             </View>
-            <View className="bg-white px-3 py-2 rounded-lg opacity-80">
+            <View className="bg-white/20 px-3 py-2 rounded-lg">
               <Ionicons name="stats-chart" size={24} color="white" />
             </View>
           </View>
 
-          {historyData.length === 0 ? (
+          {/* Loading state */}
+          {isLoading ? (
+            <View className="items-center py-20">
+              <ActivityIndicator size="large" color="#10b981" />
+              <Text className="text-textMuted font-medium mt-3">Loading transactions...</Text>
+            </View>
+          ) : groups.length === 0 ? (
             <View className="items-center justify-center py-20 bg-white rounded-3xl border border-dashed border-slate-300">
               <Ionicons name="receipt-outline" size={64} color="#cbd5e1" />
-              <Text className="text-textMuted font-bold text-lg mt-4">No Transactions Yet</Text>
-              <Text className="text-slate-400 text-sm mt-1">Your ledger will appear here</Text>
+              <Text className="text-textMuted font-bold text-lg mt-4">No Transactions Found</Text>
+              <Text className="text-slate-400 text-sm mt-1">Try adjusting your filters</Text>
             </View>
           ) : (
-            historyData.map((group, groupIndex) => (
-              <View key={groupIndex} className="mb-6">
-                <Text className="text-textMuted font-bold text-sm mb-3 ml-1">{group.date}</Text>
-
-                <View className="bg-white rounded-3xl overflow-hidden border border-slate-100 shadow-sm">
-                  {group.entries.map((entry, entryIndex) => {
-                    if (activeCategory !== 'All' && entry.category !== activeCategory) return null;
-                    if (activeType !== 'Both' && entry.type.toLowerCase() !== activeType.toLowerCase()) return null;
-                    if (!isWithinRange(entry.createdAt)) return null;
-
-                    const query = searchQuery.trim().toLowerCase();
-                    const matchesSearch = !query ||
-                      entry.category.toLowerCase().includes(query) ||
-                      (entry.note && entry.note.toLowerCase().includes(query)) ||
-                      entry.amount.toLowerCase().includes(query);
-
-                    if (!matchesSearch) return null;
-
-                    return (
+            <>
+              {groups.map((group, groupIndex) => (
+                <View key={group.date} className="mb-6">
+                  <Text className="text-textMuted font-bold text-sm mb-3 ml-1">{group.date}</Text>
+                  <View className="bg-white rounded-3xl overflow-hidden border border-slate-100 shadow-sm">
+                    {group.entries.map((entry, entryIndex) => (
                       <Pressable
                         key={entry.id}
                         onPress={() => {
                           if (isLocked(entry.createdAt)) {
-                            Alert.alert("Locked Record", "This transaction is from more than 14 days ago and cannot be modified.");
+                            Alert.alert('Locked Record', 'This transaction is older than 14 days and cannot be modified.');
                             return;
                           }
-                          const numStr = entry.amount.replace(/[^0-9.]/g, '');
-                          setTempValue(numStr);
-                          setEditModal({ groupIdx: groupIndex, entryIdx: entryIndex, title: entry.category, type: entry.type });
+                          setTempValue(entry.amount.replace(/[^0-9.]/g, ''));
+                          setEditModal({ id: entry.id, groupIdx: groupIndex, entryIdx: entryIndex, title: entry.category, type: entry.type });
                         }}
                         className="flex-row justify-between items-center px-5 py-4 active:bg-slate-50"
                         style={[
                           entryIndex !== group.entries.length - 1 ? { borderBottomWidth: 1, borderBottomColor: '#f8fafc' } : {},
-                          isLocked(entry.createdAt) ? { opacity: 0.8 } : {}
+                          isLocked(entry.createdAt) ? { opacity: 0.8 } : {},
                         ]}
                       >
                         <View className="flex-row items-center flex-1">
-                          <View className="w-10 h-10 rounded-full justify-center items-center mr-4" style={{ backgroundColor: entry.type === 'expense' ? '#fee2e2' : '#d1fae5' }}>
+                          <View
+                            className="w-10 h-10 rounded-full justify-center items-center mr-4"
+                            style={{ backgroundColor: entry.type === 'expense' ? '#fee2e2' : '#d1fae5' }}
+                          >
                             <Ionicons
                               name={entry.type === 'expense' ? 'trending-down' : 'trending-up'}
                               size={18}
@@ -312,9 +388,7 @@ export default function HistoryScreen() {
                                 <Ionicons name="lock-closed" size={12} color="#94a3b8" style={{ marginLeft: 6 }} />
                               )}
                             </View>
-                            {entry.note ? (
-                              <Text className="text-textMuted text-xs font-medium">{entry.note}</Text>
-                            ) : null}
+                            {entry.note ? <Text className="text-textMuted text-xs font-medium">{entry.note}</Text> : null}
                             <Text className="text-textMuted text-[10px] font-bold mt-1 uppercase tracking-tighter">
                               {entry.period} • {formatDate(entry.createdAt)} • {formatTime(entry.createdAt)}
                             </Text>
@@ -326,43 +400,58 @@ export default function HistoryScreen() {
                             {entry.amount}
                           </Text>
                           {!isLocked(entry.createdAt) && (
-                            <Pressable
-                              hitSlop={10}
-                              onPress={() => handleDelete(entry.id)}
-                              className="p-1"
-                            >
+                            <Pressable hitSlop={10} onPress={() => handleDelete(entry.id)} className="p-1">
                               <Ionicons name="trash-outline" size={18} color="#ef4444" />
                             </Pressable>
                           )}
                         </View>
                       </Pressable>
-                    );
-                  })}
+                    ))}
+                  </View>
                 </View>
-              </View>
-            ))
+              ))}
+
+              {/* Load More */}
+              {hasMore && (
+                <Pressable
+                  onPress={loadMore}
+                  disabled={isLoadingMore}
+                  className="bg-white border border-slate-200 py-4 rounded-2xl items-center mb-4 shadow-sm active:bg-slate-50"
+                >
+                  {isLoadingMore ? (
+                    <ActivityIndicator size="small" color="#10b981" />
+                  ) : (
+                    <View className="flex-row items-center">
+                      <Ionicons name="chevron-down" size={18} color="#10b981" />
+                      <Text className="text-primaryDark font-bold ml-2">Load More ({total - offset} remaining)</Text>
+                    </View>
+                  )}
+                </Pressable>
+              )}
+
+              {!hasMore && groups.length > 0 && (
+                <Text className="text-center text-slate-400 text-xs font-bold uppercase tracking-widest py-4">
+                  All {total} transactions loaded
+                </Text>
+              )}
+            </>
           )}
         </View>
       </ScrollView>
 
-      {/* --- MODELS --- */}
+      {/* --- Modals --- */}
 
-      {/* Date Range Selection Modal */}
+      {/* Date Range */}
       <Modal visible={showRangeDropdown} transparent animationType="fade">
-        <Pressable className="flex-1 bg-black justify-center items-center opacity-90" onPress={() => setShowRangeDropdown(false)}>
+        <Pressable className="flex-1 justify-center items-center" style={{ backgroundColor: 'rgba(0,0,0,0.5)' }} onPress={() => setShowRangeDropdown(false)}>
           <View className="bg-white w-3/4 rounded-3xl overflow-hidden p-2 shadow-lg">
             <Text className="text-center font-bold text-textMuted py-3 border-b border-slate-100 mb-2">Select Date Range</Text>
             {ranges.map(r => (
               <Pressable
                 key={r}
                 onPress={() => {
-                  if (r === 'Custom Range...') {
-                    setShowRangeDropdown(false);
-                    setShowPicker('start');
-                  } else {
-                    setActiveRange(r);
-                    setShowRangeDropdown(false);
-                  }
+                  if (r === 'Custom Range...') { setShowRangeDropdown(false); setShowPicker('start'); }
+                  else { setActiveRange(r); setShowRangeDropdown(false); }
                 }}
                 className="py-4 px-4 rounded-xl mb-1"
                 style={activeRange === r ? { backgroundColor: '#d1fae5' } : {}}
@@ -374,39 +463,21 @@ export default function HistoryScreen() {
         </Pressable>
       </Modal>
 
-      {/* --- DATE PICKERS --- */}
+      {/* Date Pickers */}
       {showPicker === 'start' && (
-        <DateTimePicker
-          value={customStartDate || new Date()}
-          mode="date"
-          display="default"
-          onChange={onChangeDate}
-          maximumDate={new Date()}
-        />
+        <DateTimePicker value={customStartDate || new Date()} mode="date" display="default" onChange={onChangeDate} maximumDate={new Date()} />
       )}
       {showPicker === 'end' && (
-        <DateTimePicker
-          value={customEndDate || new Date()}
-          mode="date"
-          display="default"
-          onChange={onChangeDate}
-          minimumDate={customStartDate || undefined}
-          maximumDate={new Date()}
-        />
+        <DateTimePicker value={customEndDate || new Date()} mode="date" display="default" onChange={onChangeDate} minimumDate={customStartDate || undefined} maximumDate={new Date()} />
       )}
 
-      {/* Type Selection Modal */}
+      {/* Type */}
       <Modal visible={showTypeDropdown} transparent animationType="fade">
-        <Pressable className="flex-1 bg-black justify-center items-center opacity-90" onPress={() => setShowTypeDropdown(false)}>
+        <Pressable className="flex-1 justify-center items-center" style={{ backgroundColor: 'rgba(0,0,0,0.5)' }} onPress={() => setShowTypeDropdown(false)}>
           <View className="bg-white w-2/3 rounded-3xl overflow-hidden p-2 shadow-lg">
             <Text className="text-center font-bold text-textMuted py-3 border-b border-slate-100 mb-2">Select Type</Text>
             {types.map(t => (
-              <Pressable
-                key={t}
-                onPress={() => { setActiveType(t); setShowTypeDropdown(false); }}
-                className="py-4 px-4 rounded-xl"
-                style={activeType === t ? { backgroundColor: '#d1fae5' } : {}}
-              >
+              <Pressable key={t} onPress={() => { setActiveType(t); setShowTypeDropdown(false); }} className="py-4 px-4 rounded-xl" style={activeType === t ? { backgroundColor: '#d1fae5' } : {}}>
                 <Text className="text-center font-bold text-lg" style={{ color: activeType === t ? '#059669' : '#1e293b' }}>{t}</Text>
               </Pressable>
             ))}
@@ -414,19 +485,14 @@ export default function HistoryScreen() {
         </Pressable>
       </Modal>
 
-      {/* Category Selection Modal */}
+      {/* Category */}
       <Modal visible={showCategoryDropdown} transparent animationType="fade">
-        <Pressable className="flex-1 bg-black justify-center items-center opacity-90" onPress={() => setShowCategoryDropdown(false)}>
-          <View className="bg-white w-3/4 max-h-[70%] rounded-3xl overflow-hidden p-2 shadow-lg">
+        <Pressable className="flex-1 justify-center items-center" style={{ backgroundColor: 'rgba(0,0,0,0.5)' }} onPress={() => setShowCategoryDropdown(false)}>
+          <View className="bg-white w-3/4 rounded-3xl overflow-hidden p-2 shadow-lg" style={{ maxHeight: '70%' }}>
             <Text className="text-center font-bold text-textMuted py-3 border-b border-slate-100 mb-2">Select Category</Text>
             <ScrollView showsVerticalScrollIndicator={false}>
               {categories.map(c => (
-                <Pressable
-                  key={c}
-                  onPress={() => { setActiveCategory(c); setShowCategoryDropdown(false); }}
-                  className="py-4 px-4 rounded-xl mb-1"
-                  style={activeCategory === c ? { backgroundColor: '#d1fae5' } : {}}
-                >
+                <Pressable key={c} onPress={() => { setActiveCategory(c); setShowCategoryDropdown(false); }} className="py-4 px-4 rounded-xl mb-1" style={activeCategory === c ? { backgroundColor: '#d1fae5' } : {}}>
                   <Text className="text-center font-bold text-lg" style={{ color: activeCategory === c ? '#059669' : '#1e293b' }}>{c}</Text>
                 </Pressable>
               ))}
@@ -435,13 +501,12 @@ export default function HistoryScreen() {
         </Pressable>
       </Modal>
 
-      {/* Generic Edit Value Modal */}
+      {/* Edit Modal */}
       <Modal visible={!!editModal} transparent animationType="fade">
         <KeyboardAvoidingView className="flex-1" behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
           <View className="flex-1 justify-center items-center px-5" style={{ backgroundColor: 'rgba(15,23,42,0.6)' }}>
             <View className="bg-white p-6 rounded-3xl items-center w-full shadow-2xl">
               <Text className="text-xl font-extrabold text-textMain mb-4">Edit {editModal?.title} Entry</Text>
-
               <View className="flex-row items-center border border-slate-200 rounded-2xl px-4 py-3 mb-6 bg-slate-50 w-full">
                 <Text className="text-xl font-bold mr-2" style={{ color: editModal?.type === 'expense' ? '#ef4444' : '#10b981' }}>
                   {editModal?.type === 'expense' ? '-₹' : '+₹'}
@@ -451,10 +516,9 @@ export default function HistoryScreen() {
                   onChangeText={setTempValue}
                   keyboardType="numeric"
                   autoFocus
-                  className="flex-1 text-xl font-bold text-textMain text-center pr-6" // pr-6 balances visual center
+                  className="flex-1 text-xl font-bold text-textMain text-center"
                 />
               </View>
-
               <View className="flex-row w-full gap-3">
                 <Pressable onPress={() => { setEditModal(null); setTempValue(''); }} className="flex-1 bg-slate-100 py-4 rounded-xl items-center">
                   <Text className="text-textMain font-bold">Cancel</Text>
@@ -467,7 +531,6 @@ export default function HistoryScreen() {
           </View>
         </KeyboardAvoidingView>
       </Modal>
-
     </SafeAreaView>
   );
 }

@@ -5,7 +5,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useGlobalState } from '../context/GlobalState';
 
 export default function DailyScreen() {
-  const { dailyCats, addTransaction } = useGlobalState();
+  const { dailyExpenseCats, dailyIncomeCats, addTransaction } = useGlobalState();
   const amountRef = useRef<TextInput>(null);
   const [type, setType] = useState('expense');
   const [amount, setAmount] = useState('');
@@ -16,7 +16,9 @@ export default function DailyScreen() {
   const [isSaving, setIsSaving] = useState(false);
   const [showSuccess, setShowSuccess] = useState(false);
 
-  const categories = dailyCats.filter(c => !c.isArchived).map(c => c.name);
+  const categories = type === 'expense' 
+    ? dailyExpenseCats.filter(c => !c.isArchived).map(c => c.name)
+    : dailyIncomeCats.filter(c => !c.isArchived).map(c => c.name);
 
   const isExp = type === 'expense';
 
@@ -73,14 +75,22 @@ export default function DailyScreen() {
           {/* Toggle Type */}
           <View className="flex-row bg-slate-200 rounded-xl p-1 mb-10">
             <Pressable
-              onPress={() => { setType('expense'); setCategory('Food'); }}
+              onPress={() => { 
+                setType('expense'); 
+                const firstExpenseCat = dailyExpenseCats.filter(c => !c.isArchived)[0]?.name || 'Food';
+                setCategory(firstExpenseCat); 
+              }}
               className="flex-1 py-3 rounded-lg items-center"
               style={isExp ? { backgroundColor: 'white', shadowColor: '#000', shadowOpacity: 0.05, shadowRadius: 2, shadowOffset: { width: 0, height: 1 }, elevation: 2 } : { backgroundColor: 'transparent' }}
             >
               <Text className="font-semibold" style={{ color: isExp ? '#ef4444' : '#64748b' }}>Expense</Text>
             </Pressable>
             <TouchableOpacity
-              onPress={() => { setType('income'); setCategory('Other'); }}
+              onPress={() => { 
+                setType('income'); 
+                const firstIncomeCat = dailyIncomeCats.filter(c => !c.isArchived)[0]?.name || 'Other';
+                setCategory(firstIncomeCat); 
+              }}
               className="flex-1 py-3 rounded-lg items-center"
               style={!isExp ? { backgroundColor: 'white', shadowColor: '#000', shadowOpacity: 0.05, shadowRadius: 2, shadowOffset: { width: 0, height: 1 }, elevation: 2 } : { backgroundColor: 'transparent' }}
             >
